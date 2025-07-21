@@ -24,7 +24,7 @@ avgImg = mean(movR, 3);
 avgImg = avgImg - prctile(avgImg(:), 20);
 
 % check the noise:
-intens = squeeze(mean(mean(movR)));[
+intens = squeeze(mean(mean(movR)));
 t = 1:length(intens);
 plot(t, intens, 'k-');
 
