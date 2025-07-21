@@ -5,7 +5,7 @@ from sklearn.linear_model import LinearRegression
 from experiment_constants import *
 
 
-def _compute_intensity(movie):
+def compute_intensity(movie):
     """ Compute mean intensity of each frame throughout the movie """
     frames = movie.shape[0]
     intensity = np.mean(movie, axis=(1, 2))  # mean across height and width
@@ -28,7 +28,7 @@ def clean_intensity_noise(movie):
     fig, ax = plt.subplots(1, 3, figsize=(20, 4))
 
     # Compute mean intensity of each frame throughout the movie
-    intensity = _compute_intensity(movie)
+    intensity = compute_intensity(movie)
     t = np.arange(len(intensity))
 
     ax[0].plot(t, intensity, 'k-')
@@ -49,7 +49,7 @@ def clean_intensity_noise(movie):
     movie_clean = np.delete(movie, bad_frames, axis=0)
 
     # Recheck noise
-    intensity = _compute_intensity(movie_clean)
+    intensity = compute_intensity(movie_clean)
     t = np.arange(len(intensity))
 
     ax[2].plot(t, intensity, 'k-')
@@ -74,9 +74,39 @@ def _compute_psd(signal):
 
     return signal_psd
 
+def regress_out_poly2(movie, intensity=None, scale_images=False):
+    """" Regress out linear drift, and quadratic drift from each pixel's time trace
+         Optional: Regress out intensity as well
+    """
+    nframes, nrow, ncol = movie.shape
+    t = np.arange(nframes)
+    t_centered = t - np.mean(t)
+
+    to_regress = [t_centered, t_centered ** 2] if intensity is None else [intensity, t_centered, t_centered ** 2]
+    X = np.vstack(to_regress).T
+
+    flat = movie.reshape(nframes, -1)
+    model = LinearRegression().fit(X, flat)
+    residuals = flat - model.predict(X)
+    movie_clean = residuals.reshape(movie.shape)
+
+    if scale_images:
+        scale_images = model.coef_.T.reshape(3, nrow, ncol)
+        fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+        for i in range(3):
+            ax = axes[i]
+            im = ax.imshow(scale_images[i], cmap='gray')
+            ax.set_title(f"Regressor {i + 1}")
+            fig.colorbar(im, ax=ax)
+
+        fig.suptitle("Scale Images")
+        plt.show()
+
+    return movie_clean
+
 
 def clean_power_spectrum_noise(movie):
-    intensity = _compute_intensity(movie)
+    intensity = compute_intensity(movie)
     t = np.arange(len(intensity))
 
     intensity_psd = _compute_psd(intensity)
@@ -118,27 +148,7 @@ def clean_power_spectrum_noise(movie):
     t_clean = np.arange(len(intensity_high_pass))
 
     # Regress out intensity, linear drift, and quadratic drift from each pixel's time trace
-    t_clean_centered = t_clean - np.mean(t_clean)
-    X = np.vstack([intensity_high_pass, t_clean_centered, t_clean_centered ** 2]).T
-
-    nframes, nrow, ncol = movie_clean.shape
-    movie_reshaped = movie_clean.reshape(nframes, -1)
-    model = LinearRegression().fit(X, movie_reshaped)
-    predicted = model.predict(X)
-    residuals = movie_reshaped - predicted
-    movie_clean = residuals.reshape(nframes, nrow, ncol)
-    scale_images = model.coef_.T.reshape(3, nrow, ncol)
-
-    fig, axes = plt.subplots(1, 3, figsize=(12, 4))
-    for i in range(3):
-        ax = axes[i]
-        im = ax.imshow(scale_images[i], cmap='gray')
-        ax.set_title(f"Regressor {i + 1}")
-        fig.colorbar(im, ax=ax)
-
-    fig.suptitle("Scale Images")
-    plt.show()
-
+    movie_clean = regress_out_poly2(movie_clean, intensity=intensity_high_pass, scale_images=True)
     return movie_clean
 
 

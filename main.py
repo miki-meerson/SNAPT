@@ -1,8 +1,10 @@
+import numpy as np
 import tifffile
 import matplotlib.pyplot as plt
 
 from clean_pipeline import clean_movie_pipeline
 from experiment_constants import *
+from clean_pipeline import compute_intensity, regress_out_poly2
 
 
 def get_average_image(movie):
@@ -54,8 +56,65 @@ def get_average_image(movie):
     plt.show()
 
 
+def get_average_images_during_stimulus(movie):
+    assert len(BLUE_ON) == len(BLUE_OFF), "Amount of stimulus start and end time points should be the same"
+
+    blocks_num = len(BLUE_ON)
+    num_epochs = len(BLUE_OFF)
+    blue_on_periods = np.array([np.arange(start + FRAMES_TO_SKIP, start + LIGHT_STIMULATION_DURATION) for start in BLUE_ON])
+    blue_off_periods = np.array([np.arange(start + FRAMES_TO_SKIP, start + LIGHT_STIMULATION_DURATION) for start in BLUE_OFF])
+
+    intensity = compute_intensity(movie)
+    t = np.arange(len(intensity))
+
+    plt.figure(figsize=(10, 10))
+    plt.plot(t, intensity, 'k-')
+    for i in range(num_epochs):
+        plt.plot(blue_on_periods[i], intensity[blue_on_periods[i]], 'b-')
+        plt.plot(blue_off_periods[i], intensity[blue_off_periods[i]], 'r-')
+    plt.title("Intensity with Blue On/Off Periods")
+    plt.show()
+
+    # Build stimulus-aligned movie blocks
+    nframes, nrow, ncol = movie.shape
+    movie_on_blocks = np.zeros((blocks_num, BLOCK_LENGTH, nrow, ncol))
+    movie_off_blocks = np.zeros_like(movie_on_blocks)
+
+    for i in range(blocks_num):
+        movie_on = movie[blue_on_periods[i]]
+        movie_off = movie[blue_off_periods[i]]
+
+        # TODO understand why in original code skipped 50 and not 80
+        movie_on_blocks[i] = movie_on[FRAMES_TO_SKIP:BLOCK_LENGTH + FRAMES_TO_SKIP]
+        movie_off_blocks[i] = movie_off[FRAMES_TO_SKIP:BLOCK_LENGTH + FRAMES_TO_SKIP]
+
+        # TODO understand this
+        # align epochs across time (for consistency)
+        if i > 0:
+            movie_on_blocks[i] -= np.mean(movie_on_blocks[i, :100], axis=0)
+            movie_off_blocks[i] -= np.mean(movie_off_blocks[i, :100], axis=0)
+
+    # TODO understand this
+    movie_on_blocks = movie_on_blocks.transpose(0, 2, 3, 1).reshape((-1, nrow, ncol))
+    movie_off_blocks = movie_off_blocks.transpose(0, 2, 3, 1).reshape((-1, nrow, ncol))
+
+    movie_on_blocks = regress_out_poly2(movie_on_blocks)
+    movie_off_blocks = regress_out_poly2(movie_off_blocks)
+
+    plt.figure()
+    plt.plot(np.mean(movie_on_blocks, axis=(1, 2)), label="Blue On")
+    plt.plot(np.mean(movie_off_blocks, axis=(1, 2)), label="Blue Off")
+    plt.legend()
+    plt.title("Intensity After Drift Removal")
+
+
 if __name__ == '__main__':
     # TODO fill path
     movie = tifffile.imread("")
     movie = clean_movie_pipeline(movie)
+
+    # Observe average images
+    get_average_image(movie)
+
+
 
