@@ -1,6 +1,9 @@
 import tifffile
 import matplotlib
 import matplotlib.pyplot as plt
+
+from clicky import ROISelector, apply_clicky
+
 matplotlib.use('TkAgg')
 
 from clean_pipeline import clean_movie_pipeline
@@ -56,6 +59,8 @@ def get_average_image(movie, stimulus_data_available=False):
         ax[1].set_ylabel('Y')
 
         plt.show()
+
+    return average_image
 
 
 def get_average_images_during_stimulus(movie):
@@ -114,13 +119,27 @@ if __name__ == '__main__':
 
     path = "Z:/Adam-Lab-Shared/Data/Michal_Rubin/Dendrites/AceM-neon/AcAx3/08-10-2024-acax3-l-s2/fov4/vol/vol.tif"
     clean_path = "clean_movie.tif"
-    print("Loading data...")
+    #
+    # print("Loading data...")
+    # movie = tifffile.imread(path)
+    # print("Cleaning the data...")
+    # movie = clean_movie_pipeline(movie)
+    #
+    # tifffile.imwrite(clean_path, movie)
+
+    # To skip cleanup process - load clean movie
+    print("Loading clean data...")
     movie = tifffile.imread(path)
-    print("Cleaning the data...")
-    movie = clean_movie_pipeline(movie)
-    tifffile.imwrite(clean_path, movie)
-    # Observe average images
-    get_average_image(movie)
+
+    # Apply Clicky
+    avg_img = get_average_image(movie)
+    selector = ROISelector(avg_img)
+    masks, vertices = selector.get_masks()
+
+    apply_clicky(masks, movie)
+
+
+
 
 
 

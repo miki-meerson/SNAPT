@@ -1,3 +1,4 @@
+from scipy.ndimage import gaussian_filter1d
 from scipy.signal import savgol_filter
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
@@ -81,25 +82,25 @@ def regress_out_poly2(movie, intensity=None, scale_images=False):
     """
     nframes, nrow, ncol = movie.shape
     t = np.arange(nframes)
-    t_centered = t - np.mean(t)
 
-    regressors = [t_centered, t_centered ** 2] if intensity is None else [intensity, t_centered, t_centered ** 2]
+    # Create regressors
+    t_centered = (t - np.mean(t)) / np.std(t)
+    t_quad = t_centered ** 2
+    t_quad = (t_quad - np.mean(t_quad)) / np.std(t_quad)
+
+    regressors = [t_centered, t_quad] if intensity is None else [intensity, t_centered, t_quad]
     X = np.vstack(regressors).T  # ← shape: (nframes, 2 or 3), matching MATLAB regressor matrix
     flat = movie.reshape(nframes, -1)  # each column is a pixel’s trace
     beta = np.linalg.pinv(X) @ flat
     residuals = flat - X @ beta
     movie_clean = residuals.reshape(movie.shape)
-    #
-    # flat = movie.reshape(nframes, -1)
-    # model = LinearRegression().fit(X, flat)
-    # residuals = flat - model.predict(X)
-    # movie_clean = residuals.reshape(movie.shape)
 
     if scale_images:
-        scale_images = beta.reshape(3, nrow, ncol)
+        n_regressors = X.shape[1]
+        scale_images = beta.reshape(n_regressors, nrow, ncol)
 
-        fig, axes = plt.subplots(1, 3, figsize=(12, 4))
-        for i in range(3):
+        fig, axes = plt.subplots(1, n_regressors, figsize=(12, 4))
+        for i in range(n_regressors):
             ax = axes[i]
             im = ax.imshow(scale_images[i], cmap='gray')
             ax.set_title(f"Regressor {i + 1}")
@@ -120,14 +121,14 @@ def clean_power_spectrum_noise(movie):
 
     fig, ax = plt.subplots(1, 2, figsize=(20, 4))
 
-    # TODO get exact frequency to filter
     # Remove low-freq noise ~60Hz --> ~15ms window
-    low_freq_to_filter = 15
+    low_freq_to_filter = 3
     smooth_time = 1/low_freq_to_filter
     window_length = int(smooth_time * SAMPLING_RATE)
     window_length = int(window_length if window_length % 2 == 1 else window_length + 1)
     intensity_smoothed = savgol_filter(intensity, window_length=window_length, polyorder=2)
     intensity_high_pass = intensity - intensity_smoothed
+    # intensity_high_pass -= np.mean(intensity_high_pass) # TODO check if helps drift
 
     noise_psd = _compute_psd(intensity_high_pass)
 
@@ -148,19 +149,75 @@ def clean_power_spectrum_noise(movie):
     plt.tight_layout()
     plt.show()
 
-    # TODO calculate the exact number of frames to remove
     # Remove the first few frames where the filter doesn't work
-    movie_clean = movie[10:]
-    intensity_high_pass = intensity_high_pass[10:]
-    t_clean = np.arange(len(intensity_high_pass))
+    drop_frames = window_length // 2
+    movie_clean = movie[drop_frames:]
+    intensity_high_pass = intensity_high_pass[drop_frames:]
 
     # Regress out intensity, linear drift, and quadratic drift from each pixel's time trace
     movie_clean = regress_out_poly2(movie_clean, intensity=intensity_high_pass, scale_images=True)
+
+    intensity = compute_intensity(movie_clean)
+    t = np.arange(len(intensity))
+
+    plt.figure(figsize=(12, 4))
+    plt.plot(t, intensity, 'k-')
+    plt.xlabel('Frame')
+    plt.ylabel('Mean intensity')
+    plt.title('Mean intensity After Drift Removal')
+    plt.show()
+
     return movie_clean
 
 
-def clean_movie_pipeline(movie_to_clean):
-    movie_to_clean = clean_intensity_noise(movie_to_clean)
-    movie_to_clean = clean_power_spectrum_noise(movie_to_clean)
+def clean_movie_pipeline(movie_raw):
+    movie_clean = clean_intensity_noise(movie_raw)
+    movie_clean = clean_power_spectrum_noise(movie_clean)
 
-    return movie_to_clean
+    intensity_raw = compute_intensity(movie_raw)
+    intensity_clean = compute_intensity(movie_clean)
+
+    plt.figure(figsize=(12, 4))
+    plt.plot(intensity_raw, label="Raw")
+    plt.plot(intensity_clean, label="Drift Removed")
+    plt.title("Drift Removal from Mean Intensity")
+    plt.xlabel("Frame")
+    plt.ylabel("Mean Intensity")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+    # --- Step 4: Visual inspection of noise (zoomed-in) ---
+    plt.figure(figsize=(10, 4))
+    plt.plot(intensity_clean[3000:4000])
+    plt.title("Zoomed-in Corrected Mean Intensity (check noise)")
+    plt.xlabel("Frame")
+    plt.ylabel("Corrected Intensity")
+    plt.tight_layout()
+    plt.show()
+
+    # --- Step 5: Estimate noise level ---
+    std_intensity = np.std(intensity_clean)
+    print(f"Standard deviation of corrected trace: {std_intensity:.4f}")
+
+    # --- Step 6 (Optional): Apply smoothing filter ---
+
+    # Option A: Savitzky–Golay filter
+    savgol_smoothed = savgol_filter(intensity_clean, window_length=101, polyorder=3)
+
+    # Option B: Gaussian filter
+    gaussian_smoothed = gaussian_filter1d(intensity_clean, sigma=5)
+
+    # --- Step 7: Plot filtered signals ---
+    plt.figure(figsize=(12, 4))
+    plt.plot(intensity_clean, label="Corrected (No Filter)", alpha=0.6)
+    plt.plot(savgol_smoothed, label="Savitzky–Golay Filter", linewidth=2)
+    plt.plot(gaussian_smoothed, label="Gaussian Filter", linewidth=2, linestyle="--")
+    plt.title("Comparing Filtering Methods")
+    plt.xlabel("Frame")
+    plt.ylabel("Filtered Mean Intensity")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+    return movie_clean
