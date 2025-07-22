@@ -1,7 +1,6 @@
 import numpy as np
 
 # TODO define per experiment
-
 STIM_ON_PERIOD = np.arange(300, 1900)
 STIM_OFF_PERIOD = np.arange(2000, 2500)
 SAMPLING_RATE = 1000 # Hz

@@ -4,7 +4,6 @@ from sklearn.linear_model import LinearRegression
 
 from experiment_constants import *
 
-
 def compute_intensity(movie):
     """ Compute mean intensity of each frame throughout the movie """
     frames = movie.shape[0]
@@ -39,7 +38,7 @@ def clean_intensity_noise(movie):
     # Sudden drops in brightness --> noise
     bad_frames = _detect_intensity_drops(intensity)
 
-    ax[1].plot(t, intensity, 'k-', label='Original intensity')
+    ax[1].plot(t, intensity, 'k-')
     ax[1].plot(bad_frames, intensity[bad_frames], 'r*', label='Bad frames')
     ax[1].set_xlabel('Frame')
     ax[1].set_ylabel('Mean intensity')
@@ -51,8 +50,10 @@ def clean_intensity_noise(movie):
     # Recheck noise
     intensity = compute_intensity(movie_clean)
     t = np.arange(len(intensity))
+    bad_frames = _detect_intensity_drops(intensity)
 
     ax[2].plot(t, intensity, 'k-')
+    ax[2].plot(bad_frames, intensity[bad_frames], 'r*', label='Bad frames')
     ax[2].set_xlabel('Frame')
     ax[2].set_ylabel('Mean intensity')
     ax[2].set_title('Mean intensity over time')
@@ -82,16 +83,21 @@ def regress_out_poly2(movie, intensity=None, scale_images=False):
     t = np.arange(nframes)
     t_centered = t - np.mean(t)
 
-    to_regress = [t_centered, t_centered ** 2] if intensity is None else [intensity, t_centered, t_centered ** 2]
-    X = np.vstack(to_regress).T
-
-    flat = movie.reshape(nframes, -1)
-    model = LinearRegression().fit(X, flat)
-    residuals = flat - model.predict(X)
+    regressors = [t_centered, t_centered ** 2] if intensity is None else [intensity, t_centered, t_centered ** 2]
+    X = np.vstack(regressors).T  # ← shape: (nframes, 2 or 3), matching MATLAB regressor matrix
+    flat = movie.reshape(nframes, -1)  # each column is a pixel’s trace
+    beta = np.linalg.pinv(X) @ flat
+    residuals = flat - X @ beta
     movie_clean = residuals.reshape(movie.shape)
+    #
+    # flat = movie.reshape(nframes, -1)
+    # model = LinearRegression().fit(X, flat)
+    # residuals = flat - model.predict(X)
+    # movie_clean = residuals.reshape(movie.shape)
 
     if scale_images:
-        scale_images = model.coef_.T.reshape(3, nrow, ncol)
+        scale_images = beta.reshape(3, nrow, ncol)
+
         fig, axes = plt.subplots(1, 3, figsize=(12, 4))
         for i in range(3):
             ax = axes[i]
@@ -116,9 +122,10 @@ def clean_power_spectrum_noise(movie):
 
     # TODO get exact frequency to filter
     # Remove low-freq noise ~60Hz --> ~15ms window
-    low_freq_to_filter = 60
+    low_freq_to_filter = 15
     smooth_time = 1/low_freq_to_filter
-    window_length = int(smooth_time if smooth_time % 2 == 1 else smooth_time + 1)
+    window_length = int(smooth_time * SAMPLING_RATE)
+    window_length = int(window_length if window_length % 2 == 1 else window_length + 1)
     intensity_smoothed = savgol_filter(intensity, window_length=window_length, polyorder=2)
     intensity_high_pass = intensity - intensity_smoothed
 
@@ -132,7 +139,7 @@ def clean_power_spectrum_noise(movie):
     ax[0].legend()
 
     ax[1].plot(t, intensity, 'k-', label='Original Intensity')
-    ax[1].plot(t, intensity_high_pass, 'k-', label='High Pass Intensity')
+    ax[1].plot(t, intensity_high_pass, 'b-', label='High Pass Intensity')
     ax[1].set_xlabel('Frame')
     ax[1].set_ylabel('Mean Intensity')
     ax[1].set_title('Mean Intensity over time')

@@ -1,13 +1,14 @@
-import numpy as np
 import tifffile
+import matplotlib
 import matplotlib.pyplot as plt
+matplotlib.use('TkAgg')
 
 from clean_pipeline import clean_movie_pipeline
 from experiment_constants import *
 from clean_pipeline import compute_intensity, regress_out_poly2
 
 
-def get_average_image(movie):
+def get_average_image(movie, stimulus_data_available=False):
     """ Present a 2D image of mean value for each pixel across time """
     fig, ax = plt.subplots(1, 2, figsize=(20, 4))
 
@@ -31,29 +32,30 @@ def get_average_image(movie):
 
     plt.show()
 
-    # Get average images during interesting periods
-    avg_img_stim_on = np.mean(movie[STIM_ON_PERIOD, :, :], axis=0)
-    avg_img_stim_off = np.mean(movie[STIM_OFF_PERIOD, :, :], axis=0)
+    if stimulus_data_available:
+        # Get average images during interesting periods
+        avg_img_stim_on = np.mean(movie[STIM_ON_PERIOD, :, :], axis=0)
+        avg_img_stim_off = np.mean(movie[STIM_OFF_PERIOD, :, :], axis=0)
 
-    # Baseline correction
-    avg_img_stim_on -= np.percentile(avg_img_stim_on, 20)
-    avg_img_stim_off -= np.percentile(avg_img_stim_off, 20)
+        # Baseline correction
+        avg_img_stim_on -= np.percentile(avg_img_stim_on, 20)
+        avg_img_stim_off -= np.percentile(avg_img_stim_off, 20)
 
-    fig, ax = plt.subplots(1, 2, figsize=(20, 4))
+        fig, ax = plt.subplots(1, 2, figsize=(20, 4))
 
-    im_stim_on = ax[0].imshow(avg_img_stim_on, cmap='gray')
-    fig.colorbar(im_stim_on, ax=ax[0])
-    ax[0].set_title('Average Image During Stimulus ON')
-    ax[0].set_xlabel('X')
-    ax[0].set_ylabel('Y')
+        im_stim_on = ax[0].imshow(avg_img_stim_on, cmap='gray')
+        fig.colorbar(im_stim_on, ax=ax[0])
+        ax[0].set_title('Average Image During Stimulus ON')
+        ax[0].set_xlabel('X')
+        ax[0].set_ylabel('Y')
 
-    im_stim_off = ax[1].imshow(avg_img_stim_off, cmap='gray')
-    fig.colorbar(im_stim_off, ax=ax[1])
-    ax[1].set_title('Average Image During Stimulus OFF')
-    ax[1].set_xlabel('X')
-    ax[1].set_ylabel('Y')
+        im_stim_off = ax[1].imshow(avg_img_stim_off, cmap='gray')
+        fig.colorbar(im_stim_off, ax=ax[1])
+        ax[1].set_title('Average Image During Stimulus OFF')
+        ax[1].set_xlabel('X')
+        ax[1].set_ylabel('Y')
 
-    plt.show()
+        plt.show()
 
 
 def get_average_images_during_stimulus(movie):
@@ -109,10 +111,14 @@ def get_average_images_during_stimulus(movie):
 
 
 if __name__ == '__main__':
-    # TODO fill path
-    movie = tifffile.imread("")
-    movie = clean_movie_pipeline(movie)
 
+    path = "Z:/Adam-Lab-Shared/Data/Michal_Rubin/Dendrites/AceM-neon/AcAx3/08-10-2024-acax3-l-s2/fov4/vol/vol.tif"
+    clean_path = "clean_movie.tif"
+    print("Loading data...")
+    movie = tifffile.imread(path)
+    print("Cleaning the data...")
+    movie = clean_movie_pipeline(movie)
+    tifffile.imwrite(clean_path, movie)
     # Observe average images
     get_average_image(movie)
 

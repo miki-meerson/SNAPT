@@ -1,10 +1,10 @@
 %%
 clc;clearvars;close all
 sz=get(0,'screensize');
-cd('X:\Lab\Labmembers\Yoav Adam\Data\In Vivo\Hippocampus\IVQ9\2016-06-21_IVQ9-S2\FOV1\172750_Spont_Dilas-10V_488-OD2.0');
+cd('Z:\Adam-Lab-Shared\Data\Michal_Rubin\Dendrites\AceM-neon\AcAx3\08-10-2024-acax3-l-s2\fov4\vol');
 movR = double(readBinMov3('movReg'));
 [nrow,ncol,nframe]=size(movR);
-
+%%
 % check the noise:
 intens = squeeze(mean(mean(movR)));
 t = 1:length(intens);
