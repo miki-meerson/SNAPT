@@ -1,3 +1,5 @@
 .idea/
 *.tif
  __pycache__/
+ *.pdf
+ *.png
