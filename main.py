@@ -1,5 +1,8 @@
 import tifffile
 import matplotlib
+
+from spike_analyzer import detect_spikes
+
 matplotlib.use('TkAgg')
 
 from roi_analyzer import roi_analysis
@@ -23,6 +26,7 @@ if __name__ == '__main__':
 
     # Apply Clicky and get traces per ROI
     roi_masks, roi_traces = roi_analysis(movie)
+    detect_spikes(roi_traces, movie)
 
 
 

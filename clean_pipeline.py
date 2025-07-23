@@ -1,9 +1,18 @@
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import savgol_filter
 import matplotlib.pyplot as plt
-from sklearn.linear_model import LinearRegression
 
 from experiment_constants import *
+
+
+def low_pass_filter(signal, low_freq_to_filter):
+    smooth_time = 1 / low_freq_to_filter
+    window_length = int(smooth_time * SAMPLING_RATE)
+    window_length = int(window_length if window_length % 2 == 1 else window_length + 1)
+    signal_smoothed = savgol_filter(signal, window_length=window_length, polyorder=2)
+    signal_high_pass = signal - signal_smoothed
+
+    return signal_high_pass
 
 def compute_intensity(movie):
     """ Compute mean intensity of each frame throughout the movie """
@@ -121,15 +130,7 @@ def clean_power_spectrum_noise(movie):
 
     fig, ax = plt.subplots(1, 2, figsize=(20, 4))
 
-    # Remove low-freq noise ~60Hz --> ~15ms window
-    low_freq_to_filter = 3
-    smooth_time = 1/low_freq_to_filter
-    window_length = int(smooth_time * SAMPLING_RATE)
-    window_length = int(window_length if window_length % 2 == 1 else window_length + 1)
-    intensity_smoothed = savgol_filter(intensity, window_length=window_length, polyorder=2)
-    intensity_high_pass = intensity - intensity_smoothed
-    # intensity_high_pass -= np.mean(intensity_high_pass) # TODO check if helps drift
-
+    intensity_high_pass = low_pass_filter(intensity, low_freq_to_filter=3)
     noise_psd = _compute_psd(intensity_high_pass)
 
     ax[0].semilogy(freq[:len(freq)//2], intensity_psd[:len(freq)//2], label="Raw")
