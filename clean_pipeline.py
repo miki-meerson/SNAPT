@@ -151,7 +151,7 @@ def clean_power_spectrum_noise(movie):
     plt.show()
 
     # Remove the first few frames where the filter doesn't work
-    drop_frames = window_length // 2
+    drop_frames = 10
     movie_clean = movie[drop_frames:]
     intensity_high_pass = intensity_high_pass[drop_frames:]
 
