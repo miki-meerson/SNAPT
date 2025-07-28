@@ -1,3 +1,4 @@
+from matplotlib.widgets import Slider
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import savgol_filter
 import matplotlib.pyplot as plt
@@ -46,16 +47,21 @@ def clean_intensity_noise(movie):
     ax[0].set_title('Mean intensity over time')
 
     # Sudden drops in brightness --> noise
-    bad_frames = _detect_intensity_drops(intensity)
+    initial_bad_frames = True
 
-    ax[1].plot(t, intensity, 'k-')
-    ax[1].plot(bad_frames, intensity[bad_frames], 'r*', label='Bad frames')
-    ax[1].set_xlabel('Frame')
-    ax[1].set_ylabel('Mean intensity')
-    ax[1].set_title("Bad frame detection")
-    ax[1].legend()
+    while len(bad_frames) > 0 or initial_bad_frames:
+        bad_frames = _detect_intensity_drops(intensity)
+        movie_clean = np.delete(movie, bad_frames, axis=0)
 
-    movie_clean = np.delete(movie, bad_frames, axis=0)
+        if initial_bad_frames:
+            ax[1].plot(t, intensity, 'k-')
+            ax[1].plot(bad_frames, intensity[bad_frames], 'r*', label='Bad frames')
+            ax[1].set_xlabel('Frame')
+            ax[1].set_ylabel('Mean intensity')
+            ax[1].set_title("Bad frame detection")
+            ax[1].legend()
+
+        initial_bad_frames = False
 
     # Recheck noise
     intensity = compute_intensity(movie_clean)
@@ -70,11 +76,6 @@ def clean_intensity_noise(movie):
 
     plt.tight_layout()
     plt.show()
-
-    # TODO consider removing bad frames in a loop if possible or play with -3.5 threshold
-    bad_frames = _detect_intensity_drops(intensity)
-    if len(bad_frames) > 0:
-        print(f"Warning: {len(bad_frames)} bad frames remain after cleaning")
 
     return movie_clean
 
@@ -121,34 +122,69 @@ def regress_out_poly2(movie, intensity=None, scale_images=False):
     return movie_clean
 
 
-def clean_power_spectrum_noise(movie):
+def choose_low_freq_to_filter(movie, initial_cutoff=3.0):
     intensity = compute_intensity(movie)
     t = np.arange(len(intensity))
-
-    intensity_psd = _compute_psd(intensity)
     freq = np.fft.fftfreq(len(intensity), d=1/SAMPLING_RATE)
+    freq_half = freq[:len(freq)//2]
 
-    fig, ax = plt.subplots(1, 2, figsize=(20, 4))
+    # Set up figure and axes
+    fig, axs = plt.subplots(2, 1, figsize=(14, 8))
+    plt.subplots_adjust(bottom=0.25)
 
-    intensity_high_pass = low_pass_filter(intensity, low_freq_to_filter=3)
+    ax_psd = axs[0]
+    ax_time = axs[1]
+
+    # Initial filtered signal and PSD
+    intensity_high_pass = low_pass_filter(intensity, low_freq_to_filter=initial_cutoff)
+    intensity_psd = _compute_psd(intensity)
     noise_psd = _compute_psd(intensity_high_pass)
 
-    ax[0].semilogy(freq[:len(freq)//2], intensity_psd[:len(freq)//2], label="Raw")
-    ax[0].semilogy(freq[:len(freq)//2], noise_psd[:len(freq)//2], label="Filtered")
-    ax[0].set_title('Intensity Power Spectrum')
-    ax[0].set_xlabel("Frequency (Hz)")
-    ax[0].set_ylabel("Power")
-    ax[0].legend()
+    # Plot PSD
+    l1, = ax_psd.semilogy(freq_half, intensity_psd[:len(freq)//2], label="Raw")
+    l2, = ax_psd.semilogy(freq_half, noise_psd[:len(freq)//2], label=f"Filtered @ {initial_cutoff}Hz")
+    ax_psd.set_title('Intensity Power Spectrum')
+    ax_psd.set_xlabel("Frequency (Hz)")
+    ax_psd.set_ylabel("Power")
+    ax_psd.legend()
 
-    ax[1].plot(t, intensity, 'k-', label='Original Intensity')
-    ax[1].plot(t, intensity_high_pass, 'b-', label='High Pass Intensity')
-    ax[1].set_xlabel('Frame')
-    ax[1].set_ylabel('Mean Intensity')
-    ax[1].set_title('Mean Intensity over time')
-    ax[1].legend()
+    # Plot intensity traces
+    l3, = ax_time.plot(t, intensity, 'k-', label='Original Intensity')
+    l4, = ax_time.plot(t, intensity_high_pass, 'b-', label=f'High Pass Intensity')
+    ax_time.set_title('Mean Intensity over time')
+    ax_time.set_xlabel('Frame')
+    ax_time.set_ylabel('Mean Intensity')
+    ax_time.legend()
 
-    plt.tight_layout()
+    # Slider setup
+    ax_slider = plt.axes((0.25, 0.05, 0.5, 0.03))
+    slider = Slider(ax_slider, 'Low freq cutoff (Hz)', 0.1, 400.0, valinit=initial_cutoff, valstep=0.1)
+
+    def update(val):
+        low_freq = slider.val
+        filtered = low_pass_filter(intensity, low_freq_to_filter=low_freq)
+        new_psd = _compute_psd(filtered)
+
+        l2.set_ydata(new_psd[:len(freq)//2])
+        l2.set_label(f"Filtered @ {low_freq:.1f}Hz")
+        ax_psd.legend()
+
+        l4.set_ydata(filtered)
+        l4.set_label(f'High Pass Intensity @ {low_freq:.1f}Hz')
+        ax_time.legend()
+
+        fig.canvas.draw_idle()
+
+    slider.on_changed(update)
     plt.show()
+
+    return slider.val
+
+
+def clean_power_spectrum_noise(movie):
+    low_freq_cutoff = choose_low_freq_to_filter(movie)
+    intensity = compute_intensity(movie)
+    intensity_high_pass = low_pass_filter(intensity, low_freq_to_filter=low_freq_cutoff)
 
     # Remove the first few frames where the filter doesn't work
     drop_frames = 10
@@ -156,17 +192,7 @@ def clean_power_spectrum_noise(movie):
     intensity_high_pass = intensity_high_pass[drop_frames:]
 
     # Regress out intensity, linear drift, and quadratic drift from each pixel's time trace
-    movie_clean = regress_out_poly2(movie_clean, intensity=intensity_high_pass, scale_images=True)
-
-    intensity = compute_intensity(movie_clean)
-    t = np.arange(len(intensity))
-
-    plt.figure(figsize=(12, 4))
-    plt.plot(t, intensity, 'k-')
-    plt.xlabel('Frame')
-    plt.ylabel('Mean intensity')
-    plt.title('Mean intensity After Drift Removal')
-    plt.show()
+    movie_clean = regress_out_poly2(movie_clean, intensity=intensity_high_pass, scale_images=False)
 
     return movie_clean
 
@@ -188,37 +214,8 @@ def clean_movie_pipeline(movie_raw):
     plt.tight_layout()
     plt.show()
 
-    # --- Step 4: Visual inspection of noise (zoomed-in) ---
-    plt.figure(figsize=(10, 4))
-    plt.plot(intensity_clean[3000:4000])
-    plt.title("Zoomed-in Corrected Mean Intensity (check noise)")
-    plt.xlabel("Frame")
-    plt.ylabel("Corrected Intensity")
-    plt.tight_layout()
-    plt.show()
-
     # --- Step 5: Estimate noise level ---
     std_intensity = np.std(intensity_clean)
     print(f"Standard deviation of corrected trace: {std_intensity:.4f}")
-
-    # --- Step 6 (Optional): Apply smoothing filter ---
-
-    # Option A: Savitzky–Golay filter
-    savgol_smoothed = savgol_filter(intensity_clean, window_length=101, polyorder=3)
-
-    # Option B: Gaussian filter
-    gaussian_smoothed = gaussian_filter1d(intensity_clean, sigma=5)
-
-    # --- Step 7: Plot filtered signals ---
-    plt.figure(figsize=(12, 4))
-    plt.plot(intensity_clean, label="Corrected (No Filter)", alpha=0.6)
-    plt.plot(savgol_smoothed, label="Savitzky–Golay Filter", linewidth=2)
-    plt.plot(gaussian_smoothed, label="Gaussian Filter", linewidth=2, linestyle="--")
-    plt.title("Comparing Filtering Methods")
-    plt.xlabel("Frame")
-    plt.ylabel("Filtered Mean Intensity")
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
 
     return movie_clean

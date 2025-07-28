@@ -5,16 +5,18 @@ from matplotlib.widgets import LassoSelector
 from skimage.draw import polygon2mask
 
 
-def get_average_image(movie, stimulus_data_available=False):
+def get_average_image(movie, plot=False):
     """ Present a 2D image of mean value for each pixel across time """
-    plt.figure(figsize=(10, 10))
     average_image = np.mean(movie, axis=0)
 
-    im = plt.imshow(average_image, cmap='gray')
-    plt.colorbar()
-    plt.title('Average image')
-    plt.xlabel('X')
-    plt.ylabel('Y')
+    if plot:
+
+        plt.figure(figsize=(10, 10))
+        im = plt.imshow(average_image, cmap='gray')
+        plt.colorbar()
+        plt.title('Average image')
+        plt.xlabel('X')
+        plt.ylabel('Y')
 
     # Baseline correction - suppress low intensity background
     baseline_image = np.percentile(average_image, 20)
@@ -35,7 +37,7 @@ class ROISelector:
 
         self.lasso = LassoSelector(self.ax, onselect=self.on_select)
         plt.title("Draw ROI with mouse. Close window when done.")
-        plt.show()
+        plt.show(block=True)
 
     def on_select(self, vertices):
         # Save vertices
