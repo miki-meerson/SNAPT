@@ -98,21 +98,3 @@ def extract_peri_spike_movies(spike_frames, movie, roi_traces, pre_frames=50, po
     # ani = play_movie(avg_spike_movie)
     return avg_spike_movie
 
-
-def click_and_plot_traces(movie, n_traces=3):
-    fig, ax = plt.subplots()
-    ax.imshow(movie[movie.shape[0] // 2], cmap='gray')
-    ax.set_title("Click to select pixels (close window when done)")
-    points = plt.ginput(n_traces, timeout=0)
-    plt.close(fig)
-
-    points = [(int(y), int(x)) for x, y in points]
-    fig, ax = plt.subplots()
-    for (y, x) in points:
-        trace = movie[:, y, x]
-        trace_norm = (trace - trace.min()) / (trace.max() - trace.min())
-        ax.plot(trace_norm, label=f'({x},{y})')
-    ax.set_title('Normalized intensity profiles of selected pixels')
-    ax.legend()
-    plt.show()
-

@@ -47,21 +47,16 @@ def clean_intensity_noise(movie):
     ax[0].set_title('Mean intensity over time')
 
     # Sudden drops in brightness --> noise
-    initial_bad_frames = True
+    bad_frames = _detect_intensity_drops(intensity)
 
-    while len(bad_frames) > 0 or initial_bad_frames:
-        bad_frames = _detect_intensity_drops(intensity)
-        movie_clean = np.delete(movie, bad_frames, axis=0)
+    ax[1].plot(t, intensity, 'k-')
+    ax[1].plot(bad_frames, intensity[bad_frames], 'r*', label='Bad frames')
+    ax[1].set_xlabel('Frame')
+    ax[1].set_ylabel('Mean intensity')
+    ax[1].set_title("Bad frame detection")
+    ax[1].legend()
 
-        if initial_bad_frames:
-            ax[1].plot(t, intensity, 'k-')
-            ax[1].plot(bad_frames, intensity[bad_frames], 'r*', label='Bad frames')
-            ax[1].set_xlabel('Frame')
-            ax[1].set_ylabel('Mean intensity')
-            ax[1].set_title("Bad frame detection")
-            ax[1].legend()
-
-        initial_bad_frames = False
+    movie_clean = np.delete(movie, bad_frames, axis=0)
 
     # Recheck noise
     intensity = compute_intensity(movie_clean)
@@ -76,6 +71,11 @@ def clean_intensity_noise(movie):
 
     plt.tight_layout()
     plt.show()
+
+    # TODO consider removing bad frames in a loop if possible or play with -3.5 threshold
+    bad_frames = _detect_intensity_drops(intensity)
+    if len(bad_frames) > 0:
+        print(f"Warning: {len(bad_frames)} bad frames remain after cleaning")
 
     return movie_clean
 
