@@ -30,8 +30,11 @@ if __name__ == '__main__':
 
     # Apply Clicky and get traces per ROI
     roi_masks, roi_traces = roi_analysis(movie)
-    spike_frames = extract_spike_triggered_average(roi_traces)
-    avg_spike_movie = extract_peri_spike_movies(spike_frames, movie, roi_traces)
+
+    for roi_trace in roi_traces:
+        spike_frames = extract_spike_triggered_average(roi_traces)
+        # TODO plot spikes per roi trace
+
     main_analysis(avg_spike_movie, movie)
     input("Press Enter to exit...")
 
