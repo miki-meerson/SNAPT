@@ -3,8 +3,66 @@ from matplotlib import pyplot as plt, gridspec
 from matplotlib.widgets import Slider
 from scipy.signal import find_peaks
 
+from globals import *
 from clean_pipeline import low_pass_filter
-from experiment_constants import SAMPLING_RATE
+from roi_analyzer import get_average_image
+
+
+def get_bright_pixel_mask(movie):
+    avg_img = get_average_image(movie)
+    chosen_percentile = 25
+
+    # Initial mask
+    if IS_NEGATIVE_GEVI:
+        mask = avg_img <= np.percentile(avg_img, chosen_percentile)
+    else:
+        mask = avg_img >= np.percentile(avg_img, chosen_percentile)
+
+    masked_img = np.where(mask, avg_img, 0)
+
+    fig, axs = plt.subplots(1, 3, figsize=(18, 6))
+    plt.subplots_adjust(bottom=0.25)
+    ax_avg_img, ax_mask, ax_masked_img = axs
+
+    im1 = ax_avg_img.imshow(avg_img, cmap='gray')
+    ax_avg_img.set_title('Average Image')
+    ax_avg_img.axis('off')
+
+    im2 = ax_mask.imshow(mask, cmap='gray')
+    ax_mask.set_title(f'Mask ≤ {chosen_percentile}th Percentile')
+    ax_mask.axis('off')
+
+    im3 = ax_masked_img.imshow(masked_img, cmap='gray')
+    ax_masked_img.set_title('Masked Average Image')
+    ax_masked_img.axis('off')
+
+    # Slider
+    ax_slider = plt.axes((0.25, 0.05, 0.5, 0.03))
+    slider = Slider(ax_slider, 'Mask Percentile', 1, 100, valinit=chosen_percentile, valstep=1)
+
+    def update(val):
+        percentile = slider.val
+
+        if IS_NEGATIVE_GEVI:
+            new_mask = avg_img <= np.percentile(avg_img, percentile)
+        else:
+            new_mask = avg_img >= np.percentile(avg_img, percentile)
+        new_masked_img = np.where(new_mask, avg_img, 0)
+
+        im2.set_data(new_mask)
+        ax_mask.set_title(f'Mask ≤ {percentile:.0f}th Percentile')
+
+        im3.set_data(new_masked_img)
+
+        fig.canvas.draw_idle()
+
+    slider.on_changed(update)
+
+    plt.suptitle('Visualization of Signal-Rich Pixels')
+    plt.tight_layout()
+    plt.show()
+
+    return mask
 
 
 def detect_spikes_in_roi(trace):
@@ -63,7 +121,7 @@ def extract_roi_sta(roi_trace, window_size):
 
     peri_spike_traces = np.array(peri_spike_traces)
     sta = np.mean(peri_spike_traces, axis=0)
-    assert len(sta) == 2*window_size+1, f"STA trace length is wrong: should be {2*window_size+1} but is {len(sta)}"
+
     return sta, spike_indices
 
 
@@ -98,18 +156,16 @@ def spike_triggered_average_analysis(roi_traces):
     return spike_indices_per_roi, sta_per_roi
 
 
-def build_spike_triggered_movie(spike_indices, movie, roi_mask, window_size):
+def build_spike_triggered_movie(spike_indices, movie, window_size, mask=None):
     sta_frames = []
     n_frames = movie.shape[0]
 
-    for spike_time in spike_indices:
-        if window_size < spike_time < n_frames - window_size:
+    for spike_index in spike_indices:
+        if window_size < spike_index < n_frames - window_size:
+            window = movie[spike_index - window_size:spike_index + window_size + 1].copy()
 
-            # Broadcast mask to all frames
-            window = movie[spike_time - window_size:spike_time + window_size + 1].copy()
-
-            if roi_mask:
-                window[:, ~roi_mask] = 0
+            if mask is not None:
+                window[:, ~mask] = 0
 
             sta_frames.append(window)
 

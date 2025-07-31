@@ -1,10 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib import gridspec
 from matplotlib.widgets import LassoSelector
 from skimage.draw import polygon2mask
-
-from experiment_constants import SAMPLING_RATE
 
 
 def get_average_image(movie, plot=False):

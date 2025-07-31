@@ -1,8 +1,9 @@
+import numpy as np
 from matplotlib.widgets import Slider
 from scipy.signal import savgol_filter
 import matplotlib.pyplot as plt
 
-from experiment_constants import *
+from globals import *
 
 
 def low_pass_filter(signal, low_freq_to_filter):
@@ -212,7 +213,6 @@ def clean_movie_pipeline(movie_raw):
     plt.tight_layout()
     plt.show()
 
-    # --- Step 5: Estimate noise level ---
     std_intensity = np.std(intensity_clean)
     print(f"Standard deviation of corrected trace: {std_intensity:.4f}")
 
