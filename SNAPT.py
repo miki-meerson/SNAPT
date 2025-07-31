@@ -1,38 +1,13 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import cm
 from scipy.ndimage import gaussian_filter
+from scipy.interpolate import interp1d
+from scipy.optimize import curve_fit
+import warnings
+import time
 
-from roi_analyzer import get_average_image
-from spike_analyzer import play_movie
 
-
-# ---- clicky3 replacement ----
-def clicky3(movie, avg_img):
-
-    fig, ax = plt.subplots()
-    ax.imshow(avg_img, cmap='gray')
-    coords = []
-
-    def onclick(event):
-        if event.inaxes == ax:
-            coords.append((int(event.ydata), int(event.xdata)))
-            ax.plot(event.xdata, event.ydata, 'ro')
-            fig.canvas.draw()
-
-    cid = fig.canvas.mpl_connect('button_press_event', onclick)
-    plt.title('Click to select 3 pixels (Soma & Dendrites), then close window')
-    plt.show()
-
-    fig.canvas.mpl_disconnect(cid)
-
-    time_traces = []
-    for y, x in coords[:3]:
-        trace = movie[:, y, x]
-        time_traces.append(trace)
-
-    return np.array(coords[:3]), np.stack(time_traces, axis=1)
-
-# ---- extractV function (cross-correlation approach) ----
 def extract_v(movie, kernel):
     t, h, w = movie.shape
     kernel = kernel - np.mean(kernel)
@@ -60,57 +35,214 @@ def extract_v(movie, kernel):
     return v_out, corr_img, weight_img, offset_img
 
 
-def main_analysis(spike_movie, original_movie):
-    avg_img = get_average_image(original_movie)
+def shift_kernel(beta, kernel, t):
+    a, b, c, dt = beta
+    shifted_t = (t - dt) * c
+    f = interp1d(t, kernel, bounds_error=False, fill_value='extrapolate')
+    return a * f(shifted_t) + b
 
-    # Get intensity time traces by clicking on soma and dendrites
-    coords, tmp = clicky3(spike_movie, avg_img)
 
-    plt.figure()
-    for i in range(tmp.shape[1]):  # loop over pixels
-        trace = (tmp[:, i] - tmp[:, i].min()) / (np.ptp(tmp[:, i]))
-        plt.plot(trace, label=f'Pixel {i + 1}')
-    plt.title("Normalized Intensity Profiles")
-    plt.legend()
-    plt.show()
+def fit_pixel_trace(kernel, trace, t, p0=[1, 0, 1, 0]):
+    def model(t, a, b, c, dt):
+        return shift_kernel([a, b, c, dt], kernel, t)
 
-    # Kernel extraction
-    pulse = spike_movie.shape[0] // 2
-    kernel = np.mean(tmp, axis=1)  # average of soma + dendrite trace
-    kernel = kernel[(pulse-13):(pulse+17)] # TODO find correct kernel length
-    kernel = (kernel - kernel.min()) / (kernel.max() - kernel.min())  # mat2gray
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            [popt, pcov] = curve_fit(model, t, trace, p0=p0, maxfev=1000)
+            residuals = trace - model(t, *popt)
+            ss_res = np.sum(residuals**2)
+            ss_tot = np.sum((trace - np.mean(trace))**2)
+            r_squared = 1 - ss_res / ss_tot if ss_tot != 0 else 0
+            return popt, pcov, residuals, r_squared, True
+    except Exception:
+        return [np.nan]*4, None, None, 0, False
+
+
+
+def get_temporal_kernel(roi_sta_movie):
+
+    avg_trace = np.mean(roi_sta_movie, axis=(1, 2))
+    center_frame = roi_sta_movie.shape[0] // 2
+    kernel = avg_trace[(center_frame - 13):(center_frame + 17)]  # 30-frame window; adjust as needed
+    kernel = (kernel - kernel.min()) / (kernel.max() - kernel.min())  # Normalize to [0,1]
     assert kernel.shape == (30,), f"Kernel shape is incorrect: {kernel.shape}"
 
-    # Filter peri-spike movie and normalize
-    spike_mov_fit = spike_movie[(pulse - 13):(pulse + 17), :, :]
-    spike_mov_fit = gaussian_filter(spike_mov_fit, sigma=(1, 1, 0))
-    spike_mov_fit = (spike_mov_fit - np.min(spike_mov_fit)) / (np.max(spike_mov_fit) - np.min(spike_mov_fit))
+    return kernel
 
-    # Fit using extractV
-    v_out, corr_img, weight_img, offset_img = extract_v(spike_mov_fit, kernel)
+def get_peri_spike_movie(roi_sta_movie):
+    center_frame = roi_sta_movie.shape[0] // 2
 
-    # Show results
-    plt.figure(figsize=(10, 8))
+    # Extract peri-spike movie snippet aligned with kernel length
+    peri_spike_movie = roi_sta_movie[(center_frame - 13):(center_frame + 17), :, :]
+    peri_spike_movie_smooth = gaussian_filter(peri_spike_movie, sigma=(1, 1, 0))
+    peri_spike_movie_norm = (peri_spike_movie_smooth - np.min(peri_spike_movie_smooth)) / (np.max(peri_spike_movie_smooth) - np.min(peri_spike_movie_smooth))
+
+    return peri_spike_movie_norm
+
+
+def analyze_spike_triggered_movie(roi_vertices, kernel, peri_spike_movie_norm):
+
+    # Compute spatial maps of correlation and related metrics
+    v_out, corr_img, weight_img, offset_img = extract_v(peri_spike_movie_norm, kernel)
+
+    plt.figure(figsize=(12, 10))
+
     plt.subplot(2, 2, 1)
-    plt.plot(kernel, label="Kernel")
-    plt.plot(spike_mov_fit[:, coords[0][0], coords[0][1]], label="Soma Pixel")
-    plt.title('Kernel vs. Pixel Trace')
+    plt.plot(kernel, label="Temporal Kernel (Avg ROI Trace)")
+
+    # Plot example pixels traces
+    random_indices = np.random.choice(len(roi_vertices), 30, replace=False)
+    random_pixels = [roi_vertices[i] for i in random_indices]
+
+    for (x, y) in random_pixels:
+        plt.plot(peri_spike_movie_norm[:, int(y), int(x)], alpha=0.3)
+
+    plt.title('Kernel vs. ROI Pixel Traces')
     plt.legend()
 
     plt.subplot(2, 2, 2)
     plt.imshow(corr_img, cmap='hot')
+    plt.colorbar()
     plt.title("Correlation Map")
 
     plt.subplot(2, 2, 3)
     plt.imshow(weight_img, cmap='hot')
-    plt.title("Weight Map")
+    plt.colorbar()
+    plt.title("Weight (Signal Strength) Map")
 
     plt.subplot(2, 2, 4)
     plt.imshow(offset_img, cmap='hot')
-    plt.title("Offset Map")
+    plt.colorbar()
+    plt.title("Offset (Baseline Fluorescence) Map")
 
     plt.tight_layout()
     plt.show()
 
-    # Optional: play the movie
-    play_movie(spike_mov_fit, interval=100)
+    return kernel, peri_spike_movie_norm
+
+
+def snapt_algorithm(kernel, sta_movie_norm):
+    t = np.arange(kernel.shape[0])
+    n_frames, n_row, n_col = sta_movie_norm.shape
+
+    beta_mat = np.zeros((n_row, n_col, 4))
+    rsq_mat = np.zeros((n_row, n_col))
+    good_fit = np.zeros((n_row, n_col), dtype=bool)
+
+    for y in range(n_row):
+        for x in range(n_col):
+            trace = sta_movie_norm[:, y, x]
+            popt, pcov, residuals, rsq, success = fit_pixel_trace(kernel, trace, t)
+
+            beta_mat[y, x, :] = popt
+            rsq_mat[y, x] = rsq
+            good_fit[y, x] = success
+
+        print(f"Completed row {y+1} of {n_row}")
+
+    amp_img = beta_mat[:, :, 0]
+    width_img = 1.0 / beta_mat[:, :, 2]
+    dt_img = beta_mat[:, :, 3]
+
+    # Constraints
+    min_a = 0
+    min_c = 0.2
+    max_c = 4
+    min_dt = -4
+    max_dt = 4
+
+    # Apply constraints
+    good_pix = (
+            (amp_img > min_a) &
+            (width_img > min_c) & (width_img < max_c) &
+            (dt_img > min_dt) & (dt_img < max_dt)
+    )
+
+    amp_img = amp_img * good_pix
+    width_img = np.clip(width_img, min_c, max_c)
+    dt_img = np.clip(dt_img, min_dt, max_dt)
+
+    plt.figure()
+    plt.imshow(good_fit, cmap='gray')
+    plt.colorbar()
+    plt.title('Fit success')
+
+    plt.figure()
+    plt.imshow(amp_img, cmap='hot')
+    plt.colorbar()
+    plt.title('Amplitude image')
+
+    plt.figure()
+    plt.imshow(width_img, cmap='jet')
+    plt.colorbar()
+    plt.title('Spike width image')
+
+    plt.figure()
+    plt.imshow(dt_img, cmap='jet')
+    plt.colorbar()
+    plt.title('Spike delay image')
+
+    plt.figure()
+    plt.imshow(rsq_mat, cmap='plasma', vmin=0, vmax=1)
+    plt.colorbar()
+    plt.title('R² map')
+
+    plt.show()
+
+    return beta_mat, rsq_mat, good_fit
+
+
+def get_movie_pca(peri_spike_movie):
+    n_frames, n_row, n_col = peri_spike_movie.shape # T, H, W
+    movie_mean = np.mean(peri_spike_movie, axis=0)
+    movie_centered = peri_spike_movie - movie_mean
+
+    movie_flat = movie_centered.reshape(n_frames, -1)  # [T, H*W]
+
+    # Covariance matrix
+    cov = movie_flat @ movie_flat.T  # shape [T, T]
+    eigenvalues, eigenvectors = np.linalg.eigh(cov)  # ascending order
+    eigenvectors = eigenvectors[:, ::-1]
+    eigenvectors[:, 0] *= -1
+    eigenvectors[:, 2] *= -1
+
+    proj = movie_flat.T @ eigenvectors[:, :3]  # shape: [H*W, 3]
+    eigen_images = proj.reshape(n_row, n_col, 3)  # 3 eigen images
+
+    # Visualize top 9 components
+    proj_9 = movie_flat.T @ eigenvectors[:, :9]
+    eigen_images_9 = proj_9.reshape(n_row, n_col, 9)
+
+    movie_pca_flat = proj @ eigenvectors[:, :3].T  # [H*W, T]
+    movie_pca = movie_pca_flat.T.reshape(peri_spike_movie.shape)
+
+    movie_pca -= movie_pca[0]
+    movie_pca /= np.max(np.abs(movie_pca))
+
+    amp_img = np.std(movie_pca, axis=0)  # [H, W]
+    amp_img_norm = (amp_img - amp_img.min()) / (amp_img.max() - amp_img.min())
+
+    color_movie = np.zeros((n_frames, n_row, n_col, 3))  # RGB movie
+
+    for t in range(n_frames):
+        jet = cm.get_cmap('jet')
+        color_frame = jet((movie_pca[t] - 0.0) / 0.4)[..., :3]  # normalize to 0–0.4
+        base_gray = 0.5 * amp_img_norm[..., np.newaxis]
+        color_movie[t] = base_gray + 3 * amp_img_norm[..., np.newaxis] * color_frame
+        color_movie[t] = np.clip(color_movie[t], 0, 1)
+
+    fig, axs = plt.subplots(2, 3, figsize=(12, 6))
+    for i in range(6):
+        axs[i // 3, i % 3].imshow(color_movie[i + 48])
+        axs[i // 3, i % 3].axis('off')
+    plt.suptitle("PCA-filtered response montage")
+    plt.show()
+
+    for i in range(n_frames):
+        plt.imshow(color_movie[i])
+        plt.title(f"{i} ms")
+        plt.axis('off')
+        plt.pause(0.05)
+
+    return movie_pca

@@ -4,6 +4,8 @@ from matplotlib import gridspec
 from matplotlib.widgets import LassoSelector
 from skimage.draw import polygon2mask
 
+from experiment_constants import SAMPLING_RATE
+
 
 def get_average_image(movie, plot=False):
     """ Present a 2D image of mean value for each pixel across time """
@@ -59,34 +61,34 @@ class ROISelector:
 def extract_traces(movie, masks, avg_img):
     n_frames = movie.shape[0]
     n_rois = len(masks)
-    traces = np.zeros((n_frames, n_rois))
+    traces = np.zeros((n_rois, n_frames))
     f0 = np.zeros(n_rois)
 
     for i, mask in enumerate(masks):
         # Average intensity within mask for each frame
         roi_pixels = movie[:, mask]
-        traces[:, i] = roi_pixels.mean(axis=1)
+        traces[i, :] = roi_pixels.mean(axis=1)
         f0[i] = avg_img[mask].mean() # Get baseline per ROI
 
     # ΔF/F calculation
-    dff_traces = traces / f0[np.newaxis, :]
+    dff_traces = traces / f0[:, np.newaxis]
 
     fig, ax = plt.subplots(figsize=(12, 6))
     for i in range(n_rois):
-        ax.plot(dff_traces[:, i], label=f"ROI {i + 1}")
+        ax.plot(dff_traces[i, :], label=f"ROI {i + 1}")
     ax.set_title("ΔF/F traces")
     ax.set_xlabel("Frame")
     ax.set_ylabel("ΔF/F")
     ax.legend()
     plt.tight_layout()
 
-    return traces
+    return dff_traces
 
 
 def roi_analysis(movie):
     avg_img = get_average_image(movie)
     selector = ROISelector(avg_img)
     roi_masks, roi_vertices = selector.get_roi_data()
-
     roi_traces = extract_traces(movie, roi_masks, avg_img)
-    return roi_masks, roi_traces
+
+    return roi_masks, roi_vertices, roi_traces

@@ -1,5 +1,4 @@
 from matplotlib.widgets import Slider
-from scipy.ndimage import gaussian_filter1d
 from scipy.signal import savgol_filter
 import matplotlib.pyplot as plt
 
@@ -149,8 +148,7 @@ def choose_low_freq_to_filter(movie, initial_cutoff=3.0):
     ax_psd.legend()
 
     # Plot intensity traces
-    l3, = ax_time.plot(t, intensity, 'k-', label='Original Intensity')
-    l4, = ax_time.plot(t, intensity_high_pass, 'b-', label=f'High Pass Intensity')
+    l3, = ax_time.plot(t, intensity_high_pass, 'b-', label=f'High Pass Intensity')
     ax_time.set_title('Mean Intensity over time')
     ax_time.set_xlabel('Frame')
     ax_time.set_ylabel('Mean Intensity')
@@ -169,8 +167,8 @@ def choose_low_freq_to_filter(movie, initial_cutoff=3.0):
         l2.set_label(f"Filtered @ {low_freq:.1f}Hz")
         ax_psd.legend()
 
-        l4.set_ydata(filtered)
-        l4.set_label(f'High Pass Intensity @ {low_freq:.1f}Hz')
+        l3.set_ydata(filtered)
+        l3.set_label(f'High Pass Intensity @ {low_freq:.1f}Hz')
         ax_time.legend()
 
         fig.canvas.draw_idle()
