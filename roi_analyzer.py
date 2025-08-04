@@ -3,6 +3,8 @@ import numpy as np
 from matplotlib.widgets import LassoSelector
 from skimage.draw import polygon2mask
 
+from globals import PLOT_CLEANING_STEPS
+
 
 def get_average_image(movie, plot=False):
     """ Present a 2D image of mean value for each pixel across time """
@@ -68,16 +70,17 @@ def extract_traces(movie, masks, avg_img):
         f0[i] = avg_img[mask].mean() # Get baseline per ROI
 
     # ΔF/F calculation
-    dff_traces = traces / f0[:, np.newaxis]
+    dff_traces = (traces - f0[:, np.newaxis]) / f0[:, np.newaxis]
 
-    fig, ax = plt.subplots(figsize=(12, 6))
-    for i in range(n_rois):
-        ax.plot(dff_traces[i, :], label=f"ROI {i + 1}")
-    ax.set_title("ΔF/F traces")
-    ax.set_xlabel("Frame")
-    ax.set_ylabel("ΔF/F")
-    ax.legend()
-    plt.tight_layout()
+    if PLOT_CLEANING_STEPS:
+        fig, ax = plt.subplots(figsize=(12, 6))
+        for i in range(n_rois):
+            ax.plot(dff_traces[i, :], label=f"ROI {i + 1}")
+        ax.set_title("ΔF/F traces")
+        ax.set_xlabel("Frame")
+        ax.set_ylabel("ΔF/F")
+        ax.legend()
+        plt.tight_layout()
 
     return dff_traces
 

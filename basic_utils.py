@@ -41,6 +41,6 @@ def read_movie(path, dtype=np.uint16):
     else:
         raise ValueError('Unknown movie type: {}'.format(movie_type))
 
-    if IS_NEGATIVE_GEVI: movie = -movie
+    # if IS_NEGATIVE_GEVI: movie = -movie
 
     return movie

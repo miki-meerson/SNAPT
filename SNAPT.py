@@ -219,62 +219,6 @@ def snapt_algorithm(kernel, sta_movie_norm, save_dir):
     return beta_mat, rsq_mat, good_fit
 
 
-def get_movie_pca(peri_spike_movie):
-    n_frames, n_row, n_col = peri_spike_movie.shape # T, H, W
-    movie_mean = np.mean(peri_spike_movie, axis=0)
-    movie_centered = peri_spike_movie - movie_mean
-
-    movie_flat = movie_centered.reshape(n_frames, -1)  # [T, H*W]
-
-    # Covariance matrix
-    cov = movie_flat @ movie_flat.T  # shape [T, T]
-    eigenvalues, eigenvectors = np.linalg.eigh(cov)  # ascending order
-    eigenvectors = eigenvectors[:, ::-1]
-    eigenvectors[:, 0] *= -1
-    eigenvectors[:, 2] *= -1
-
-    proj = movie_flat.T @ eigenvectors[:, :3]  # shape: [H*W, 3]
-    eigen_images = proj.reshape(n_row, n_col, 3)  # 3 eigen images
-
-    # Visualize top 9 components
-    proj_9 = movie_flat.T @ eigenvectors[:, :9]
-    eigen_images_9 = proj_9.reshape(n_row, n_col, 9)
-    # TODO Add eigenimage display for debugging in Python.
-
-    movie_pca_flat = proj @ eigenvectors[:, :3].T  # [H*W, T]
-    movie_pca = movie_pca_flat.T.reshape(peri_spike_movie.shape)
-
-    movie_pca -= movie_pca[0]
-    movie_pca /= np.max(np.abs(movie_pca))
-
-    amp_img = np.std(movie_pca, axis=0)  # [H, W]
-    amp_img_norm = (amp_img - amp_img.min()) / (amp_img.max() - amp_img.min())
-
-    color_movie = np.zeros((n_frames, n_row, n_col, 3))  # RGB movie
-
-    for t in range(n_frames):
-        jet = cm.get_cmap('jet')
-        color_frame = jet((movie_pca[t] - 0.0) / 0.4)[..., :3]  # normalize to 0–0.4
-        base_gray = 0.5 * amp_img_norm[..., np.newaxis]
-        color_movie[t] = base_gray + 3 * amp_img_norm[..., np.newaxis] * color_frame
-        color_movie[t] = np.clip(color_movie[t], 0, 1)
-
-    fig, axs = plt.subplots(2, 3, figsize=(12, 6))
-    for i in range(6):
-        axs[i // 3, i % 3].imshow(color_movie[i + 48])
-        axs[i // 3, i % 3].axis('off')
-    plt.suptitle("PCA-filtered response montage")
-    plt.show()
-
-    for i in range(n_frames):
-        plt.imshow(color_movie[i])
-        plt.title(f"{i} ms")
-        plt.axis('off')
-        plt.pause(0.05)
-
-    return movie_pca
-
-
 def snapt_pipeline(sta_movie, roi_mask, results_dir):
     os.makedirs(results_dir, exist_ok=True)
     kernel = get_temporal_kernel(sta_movie)

@@ -59,7 +59,6 @@ def get_bright_pixel_mask(movie):
     slider.on_changed(update)
 
     plt.suptitle('Visualization of Signal-Rich Pixels')
-    plt.tight_layout()
     plt.show()
 
     return mask
