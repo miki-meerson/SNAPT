@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
@@ -98,7 +100,7 @@ def get_peri_spike_movie(roi_sta_movie):
     return peri_spike_movie_norm
 
 
-def analyze_spike_triggered_movie(roi_mask, kernel, peri_spike_movie_norm):
+def analyze_spike_triggered_movie(roi_mask, kernel, peri_spike_movie_norm, save_dir):
 
     # Compute spatial maps of correlation and related metrics
     v_out, corr_img, weight_img, offset_img = compute_kernel_projection_maps(peri_spike_movie_norm, kernel)
@@ -110,14 +112,14 @@ def analyze_spike_triggered_movie(roi_mask, kernel, peri_spike_movie_norm):
 
     # Plot example pixels traces
     ys, xs = np.where(roi_mask)
-    indices = np.random.choice(len(xs), 30, replace=False)
+    indices = np.random.choice(len(xs), min(30, len(xs)), replace=False)
     random_pixels = list(zip(xs[indices], ys[indices]))
 
     for (x, y) in random_pixels:
         plt.plot(peri_spike_movie_norm[:, int(y), int(x)], alpha=0.3)
 
-    plt.title('Kernel vs. ROI Pixel Traces')
     plt.legend()
+    plt.title('Kernel vs. ROI Pixel Traces')
 
     plt.subplot(2, 2, 2)
     plt.imshow(corr_img, cmap='seismic')
@@ -135,12 +137,13 @@ def analyze_spike_triggered_movie(roi_mask, kernel, peri_spike_movie_norm):
     plt.title("Offset (Baseline Fluorescence) Map")
 
     plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, "kernel_summary.png"))  # full panel
     plt.show()
 
     return kernel, peri_spike_movie_norm
 
 
-def snapt_algorithm(kernel, sta_movie_norm):
+def snapt_algorithm(kernel, sta_movie_norm, save_dir):
     t = np.arange(kernel.shape[0])
     n_frames, n_row, n_col = sta_movie_norm.shape
 
@@ -202,12 +205,15 @@ def snapt_algorithm(kernel, sta_movie_norm):
     plt.colorbar()
     plt.title('Spike delay image')
 
+
     plt.subplot(3, 2, 5)
     plt.imshow(rsq_mat, cmap='plasma', vmin=0, vmax=1)
     plt.colorbar()
     plt.title('R² map')
+    plt.savefig(os.path.join(save_dir, "r2_map.png"))
 
     plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, "snapt_summary.png"))  # full panel
     plt.show()
 
     return beta_mat, rsq_mat, good_fit
@@ -233,6 +239,7 @@ def get_movie_pca(peri_spike_movie):
     # Visualize top 9 components
     proj_9 = movie_flat.T @ eigenvectors[:, :9]
     eigen_images_9 = proj_9.reshape(n_row, n_col, 9)
+    # TODO Add eigenimage display for debugging in Python.
 
     movie_pca_flat = proj @ eigenvectors[:, :3].T  # [H*W, T]
     movie_pca = movie_pca_flat.T.reshape(peri_spike_movie.shape)
@@ -268,12 +275,13 @@ def get_movie_pca(peri_spike_movie):
     return movie_pca
 
 
-def snapt_pipeline(sta_movie, roi_mask):
+def snapt_pipeline(sta_movie, roi_mask, results_dir):
+    os.makedirs(results_dir, exist_ok=True)
     kernel = get_temporal_kernel(sta_movie)
     peri_spike_movie_norm = get_peri_spike_movie(sta_movie)
 
     # Kernel visualization
-    analyze_spike_triggered_movie(roi_mask, kernel, peri_spike_movie_norm)
+    analyze_spike_triggered_movie(roi_mask, kernel, peri_spike_movie_norm, save_dir=results_dir)
 
     # run SNAPT
-    snapt_algorithm(kernel, peri_spike_movie_norm)
+    snapt_algorithm(kernel, peri_spike_movie_norm, save_dir=results_dir)

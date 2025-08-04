@@ -2,11 +2,16 @@ import numpy as np
 from matplotlib.widgets import Slider
 from scipy.signal import savgol_filter
 import matplotlib.pyplot as plt
+from tifffile import tifffile
 
 from globals import *
 
 
-def low_pass_filter(signal, low_freq_to_filter):
+def high_pass_filter(signal, low_freq_to_filter):
+    """ High pass filter a signal
+        Firstly get the low-pass filtered signal (up to low_freq_to_filter)
+        Then subtract from the original signal
+    """
     smooth_time = 1 / low_freq_to_filter
     window_length = int(smooth_time * SAMPLING_RATE)
     window_length = int(window_length if window_length % 2 == 1 else window_length + 1)
@@ -15,8 +20,10 @@ def low_pass_filter(signal, low_freq_to_filter):
 
     return signal_high_pass
 
-def compute_intensity(movie):
+
+def _compute_intensity(movie):
     """ Compute mean intensity of each frame throughout the movie """
+
     frames = movie.shape[0]
     intensity = np.mean(movie, axis=(1, 2))  # mean across height and width
     assert frames == len(intensity), "Intensity array does not match number of frames"
@@ -26,6 +33,7 @@ def compute_intensity(movie):
 
 def _detect_intensity_drops(intensity, window_length=11, polyorder=3, bad_frames_threshold=-3.5):
     """ Detect sudden drops in brightness using a highpass filter on the intensity array """
+
     smoothed_intensity = savgol_filter(intensity, window_length=window_length, polyorder=polyorder)
     high_pass_intensity = intensity - smoothed_intensity
     bad_frames = np.where(high_pass_intensity < bad_frames_threshold)[0]
@@ -33,65 +41,92 @@ def _detect_intensity_drops(intensity, window_length=11, polyorder=3, bad_frames
     return bad_frames
 
 
-def clean_intensity_noise(movie):
-    """ Remove noise and filter the data """
-    fig, ax = plt.subplots(1, 3, figsize=(20, 4))
+def clean_intensity_noise(movie, initial_threshold=-3.5):
+    """Interactively adjust the intensity drop threshold for bad frame detection using a slider."""
+    intensity = _compute_intensity(movie)
 
-    # Compute mean intensity of each frame throughout the movie
-    intensity = compute_intensity(movie)
-    t = np.arange(len(intensity))
+    fig, axs = plt.subplots(2, 1, figsize=(14, 8))
+    plt.subplots_adjust(bottom=0.25)
 
-    ax[0].plot(t, intensity, 'k-')
-    ax[0].set_xlabel('Frame')
-    ax[0].set_ylabel('Mean intensity')
-    ax[0].set_title('Mean intensity over time')
+    ax_bad_frames = axs[0]
+    ax_cleaned = axs[1]
 
-    # Sudden drops in brightness --> noise
-    bad_frames = _detect_intensity_drops(intensity)
+    t_original = np.arange(len(intensity))
 
-    ax[1].plot(t, intensity, 'k-')
-    ax[1].plot(bad_frames, intensity[bad_frames], 'r*', label='Bad frames')
-    ax[1].set_xlabel('Frame')
-    ax[1].set_ylabel('Mean intensity')
-    ax[1].set_title("Bad frame detection")
-    ax[1].legend()
+    # Initial detection and plot
+    bad_frames = _detect_intensity_drops(intensity, bad_frames_threshold=initial_threshold)
+    l1, = ax_bad_frames.plot(t_original, intensity, 'k-', label="Intensity")
+    bad_markers1, = ax_bad_frames.plot(bad_frames, intensity[bad_frames], 'r*', label="Bad Frames")
 
     movie_clean = np.delete(movie, bad_frames, axis=0)
+    intensity_clean = _compute_intensity(movie_clean)
+    t_clean = np.arange(len(intensity_clean))
+    bad_frames_clean = _detect_intensity_drops(intensity_clean, bad_frames_threshold=initial_threshold)
+    l2, = ax_cleaned.plot(t_clean, intensity_clean, 'k-', label="Intensity (Cleaned)")
+    bad_markers2, = ax_cleaned.plot(bad_frames_clean, intensity_clean[bad_frames_clean], 'r*', label="Bad Frames")
 
-    # Recheck noise
-    intensity = compute_intensity(movie_clean)
-    t = np.arange(len(intensity))
-    bad_frames = _detect_intensity_drops(intensity)
+    ax_bad_frames.set_title('Bad Frames Detection')
+    ax_bad_frames.set_xlabel('Frame')
+    ax_bad_frames.set_ylabel('Mean Intensity')
+    ax_bad_frames.legend()
 
-    ax[2].plot(t, intensity, 'k-')
-    ax[2].plot(bad_frames, intensity[bad_frames], 'r*', label='Bad frames')
-    ax[2].set_xlabel('Frame')
-    ax[2].set_ylabel('Mean intensity')
-    ax[2].set_title('Mean intensity over time')
+    ax_cleaned.set_title('Post-Cleaning Bad Frames Detection')
+    ax_cleaned.set_xlabel('Frame')
+    ax_cleaned.set_ylabel('Mean Intensity')
+    ax_cleaned.legend()
 
-    plt.tight_layout()
+    # Slider
+    ax_slider = plt.axes((0.25, 0.05, 0.5, 0.03))
+    slider = Slider(ax_slider, 'Detection Threshold', -10.0, 0.0, valinit=initial_threshold, valstep=0.1)
+
+    def update(val):
+        threshold = slider.val
+
+        bad = _detect_intensity_drops(intensity, bad_frames_threshold=threshold)
+        bad_markers1.set_data(bad, intensity[bad])
+
+        # Recompute cleaned intensity without updating movie
+        mask = np.ones(len(intensity), dtype=bool)
+        mask[bad] = False
+        intensity_cleaned = intensity[mask]
+        t_cleaned = np.arange(len(intensity_cleaned))
+        bad_cleaned = _detect_intensity_drops(intensity_cleaned, bad_frames_threshold=threshold)
+
+        # Update plot lines
+        l2.set_data(t_cleaned, intensity_cleaned)
+        bad_markers2.set_data(bad_cleaned, intensity_cleaned[bad_cleaned])
+
+        ax_cleaned.set_xlim(0, len(intensity_cleaned))
+        ax_cleaned.set_ylim(np.min(intensity_cleaned), np.max(intensity_cleaned))
+
+        fig.canvas.draw_idle()
+
+    slider.on_changed(update)
     plt.show()
 
-    # TODO consider removing bad frames in a loop if possible or play with -3.5 threshold
-    bad_frames = _detect_intensity_drops(intensity)
-    if len(bad_frames) > 0:
-        print(f"Warning: {len(bad_frames)} bad frames remain after cleaning")
+    final_threshold = slider.val
+    final_bad = _detect_intensity_drops(intensity, bad_frames_threshold=final_threshold)
+    final_cleaned_movie = np.delete(movie, final_bad, axis=0)
 
-    return movie_clean
+    return final_cleaned_movie
+
 
 
 def _compute_psd(signal):
+    """ Compute PSD of signal """
     signal_fft = np.fft.fft(signal)
     signal_psd = np.abs(signal_fft) ** 2
-
     return signal_psd
 
-def regress_out_poly2(movie, intensity=None, scale_images=False):
-    """" Regress out linear drift, and quadratic drift from each pixel's time trace
-         Optional: Regress out intensity as well
+def _regress_out_poly2(movie, intensity=None):
+    """ Regresses out global intensity and low-order polynomial trends from each pixel's time trace
+        by fitting each pixel's fluorescence trace to a set of regressors
+        (global intensity, linear and quadratic trends) and subtracting the fitted signal.
+        Optionally visualizes the spatial weights (scale images) of each regressor.
     """
-    nframes, nrow, ncol = movie.shape
-    t = np.arange(nframes)
+
+    n_frames, n_row, n_col = movie.shape
+    t = np.arange(n_frames)
 
     # Create regressors
     t_centered = (t - np.mean(t)) / np.std(t)
@@ -99,16 +134,16 @@ def regress_out_poly2(movie, intensity=None, scale_images=False):
     t_quad = (t_quad - np.mean(t_quad)) / np.std(t_quad)
 
     regressors = [t_centered, t_quad] if intensity is None else [intensity, t_centered, t_quad]
-    X = np.vstack(regressors).T  # ← shape: (nframes, 2 or 3), matching MATLAB regressor matrix
-    flat = movie.reshape(nframes, -1)  # each column is a pixel’s trace
+    X = np.vstack(regressors).T  # ← shape: (n_frames, 2 or 3), matching MATLAB regressor matrix
+    flat = movie.reshape(n_frames, -1)  # each column is a pixel’s trace
     beta = np.linalg.pinv(X) @ flat
     residuals = flat - X @ beta
     movie_clean = residuals.reshape(movie.shape)
 
-    if scale_images:
-        n_regressors = X.shape[1]
-        scale_images = beta.reshape(n_regressors, nrow, ncol)
+    n_regressors = X.shape[1]
+    scale_images = beta.reshape(n_regressors, n_row, n_col)
 
+    if PLOT_CLEANING_STEPS:
         fig, axes = plt.subplots(1, n_regressors, figsize=(12, 4))
         for i in range(n_regressors):
             ax = axes[i]
@@ -122,13 +157,14 @@ def regress_out_poly2(movie, intensity=None, scale_images=False):
     return movie_clean
 
 
-def choose_low_freq_to_filter(movie, initial_cutoff=3.0):
-    intensity = compute_intensity(movie)
+def _choose_low_freq_to_filter(movie, initial_cutoff=3.0):
+    """ Interactively adjust the low cutoff frequency to filter """
+
+    intensity = _compute_intensity(movie)
     t = np.arange(len(intensity))
     freq = np.fft.fftfreq(len(intensity), d=1/SAMPLING_RATE)
     freq_half = freq[:len(freq)//2]
 
-    # Set up figure and axes
     fig, axs = plt.subplots(2, 1, figsize=(14, 8))
     plt.subplots_adjust(bottom=0.25)
 
@@ -136,7 +172,7 @@ def choose_low_freq_to_filter(movie, initial_cutoff=3.0):
     ax_time = axs[1]
 
     # Initial filtered signal and PSD
-    intensity_high_pass = low_pass_filter(intensity, low_freq_to_filter=initial_cutoff)
+    intensity_high_pass = high_pass_filter(intensity, low_freq_to_filter=initial_cutoff)
     intensity_psd = _compute_psd(intensity)
     noise_psd = _compute_psd(intensity_high_pass)
 
@@ -161,7 +197,7 @@ def choose_low_freq_to_filter(movie, initial_cutoff=3.0):
 
     def update(val):
         low_freq = slider.val
-        filtered = low_pass_filter(intensity, low_freq_to_filter=low_freq)
+        filtered = high_pass_filter(intensity, low_freq_to_filter=low_freq)
         new_psd = _compute_psd(filtered)
 
         l2.set_ydata(new_psd[:len(freq)//2])
@@ -181,9 +217,21 @@ def choose_low_freq_to_filter(movie, initial_cutoff=3.0):
 
 
 def clean_power_spectrum_noise(movie):
-    low_freq_cutoff = choose_low_freq_to_filter(movie)
-    intensity = compute_intensity(movie)
-    intensity_high_pass = low_pass_filter(intensity, low_freq_to_filter=low_freq_cutoff)
+    """ Cleans the movie by removing global intensity fluctuations and slow temporal drifts from each pixel's time series.
+
+        Steps:
+        1. Interactively adjusts the low cutoff frequency to filter
+        2. Applies high-pass filtering to remove slow trends.
+        3. Drops initial frames to account for filter edge effects.
+        3. Regresses out high-pass filtered intensity, linear, and quadratic time trends
+           from each pixel using second-order polynomial regression.
+
+        Returns cleaned movie of shape (n_frames - drop_frames, height, width).
+    """
+
+    low_freq_cutoff = _choose_low_freq_to_filter(movie)
+    intensity = _compute_intensity(movie)
+    intensity_high_pass = high_pass_filter(intensity, low_freq_to_filter=low_freq_cutoff)
 
     # Remove the first few frames where the filter doesn't work
     drop_frames = 10
@@ -191,29 +239,34 @@ def clean_power_spectrum_noise(movie):
     intensity_high_pass = intensity_high_pass[drop_frames:]
 
     # Regress out intensity, linear drift, and quadratic drift from each pixel's time trace
-    movie_clean = regress_out_poly2(movie_clean, intensity=intensity_high_pass, scale_images=False)
+    movie_clean = _regress_out_poly2(movie_clean, intensity=intensity_high_pass)
 
     return movie_clean
 
 
-def clean_movie_pipeline(movie_raw):
-    movie_clean = clean_intensity_noise(movie_raw)
-    movie_clean = clean_power_spectrum_noise(movie_clean)
+def clean_movie_pipeline(movie_original, save_clean=False):
+    """ Pipeline of all cleaning functions - return the clean movie """
 
-    intensity_raw = compute_intensity(movie_raw)
-    intensity_clean = compute_intensity(movie_clean)
+    print("Cleaning the data...")
+    movie_clean = clean_power_spectrum_noise(clean_intensity_noise(movie_original))
 
-    plt.figure(figsize=(12, 4))
-    plt.plot(intensity_raw, label="Raw")
-    plt.plot(intensity_clean, label="Drift Removed")
-    plt.title("Drift Removal from Mean Intensity")
-    plt.xlabel("Frame")
-    plt.ylabel("Mean Intensity")
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
+    intensity_raw = _compute_intensity(movie_original)
+    intensity_clean = _compute_intensity(movie_clean)
 
-    std_intensity = np.std(intensity_clean)
-    print(f"Standard deviation of corrected trace: {std_intensity:.4f}")
+    if PLOT_CLEANING_STEPS:
+        plt.figure(figsize=(12, 4))
+        plt.plot(intensity_raw, label="Raw")
+        plt.plot(intensity_clean, label="Drift Removed")
+        plt.title("Drift Removal from Mean Intensity")
+        plt.xlabel("Frame")
+        plt.ylabel("Mean Intensity")
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+        print(f"Standard deviation of corrected trace: {np.std(intensity_clean):.4f}")
+
+    if save_clean:
+        tifffile.imwrite(CLEAN_PATH, movie_clean)
 
     return movie_clean

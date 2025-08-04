@@ -4,7 +4,7 @@ from matplotlib.widgets import Slider
 from scipy.signal import find_peaks
 
 from globals import *
-from clean_pipeline import low_pass_filter
+from clean_pipeline import high_pass_filter
 from roi_analyzer import get_average_image
 
 
@@ -67,7 +67,7 @@ def get_bright_pixel_mask(movie):
 
 def detect_spikes_in_roi(trace):
     spikes = []
-    trace_high_pass = low_pass_filter(trace, low_freq_to_filter=3)
+    trace_high_pass = high_pass_filter(trace, low_freq_to_filter=3)
     trace_high_pass_shifted = trace_high_pass - trace_high_pass.min() + 1
 
     assert trace_high_pass_shifted.min() > 0, f"Values under 0 exist in high-pass filtered trace: smallest value is {trace_high_pass_shifted.min()}"
