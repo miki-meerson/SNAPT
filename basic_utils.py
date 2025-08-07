@@ -41,6 +41,16 @@ def read_movie(path, dtype=np.uint16):
     else:
         raise ValueError('Unknown movie type: {}'.format(movie_type))
 
-    # if IS_NEGATIVE_GEVI: movie = -movie
+    return movie
+
+
+def basic_movie_preprocessing(movie):
+    if IS_NEGATIVE_GEVI: movie = -movie
+
+    movie = movie.astype(np.float32)
+
+    # Subtract baseline to reduce background noise
+    avg_img = np.mean(movie, axis=0)
+    movie -= np.percentile(avg_img, 20)
 
     return movie

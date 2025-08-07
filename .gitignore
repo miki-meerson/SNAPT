@@ -1,6 +1,7 @@
 .idea/
 *.tif
- __pycache__/
  *.pdf
  *.png
- snapt_results/
+ ./__pycache__/
+ ./snapt_results/
+ ./matlab/

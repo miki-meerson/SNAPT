@@ -2,10 +2,12 @@ import numpy as np
 from matplotlib import pyplot as plt, gridspec
 from matplotlib.widgets import Slider
 from scipy.signal import find_peaks
+from scipy.ndimage import uniform_filter1d
 
 from globals import *
 from clean_pipeline import high_pass_filter
 from roi_analyzer import get_average_image
+from scipy.signal import find_peaks
 
 
 def get_bright_pixel_mask(movie):
@@ -64,35 +66,48 @@ def get_bright_pixel_mask(movie):
     return mask
 
 
-def detect_spikes_in_roi(trace):
+def detect_spikes(trace, movmean_window=40, min_distance=10):
     spikes = []
-    trace_high_pass = high_pass_filter(trace, low_freq_to_filter=3)
-    trace_high_pass_shifted = trace_high_pass - trace_high_pass.min() + 1
+    trace = (trace - np.min(trace)) / (np.max(trace) - np.min(trace))
 
-    assert trace_high_pass_shifted.min() > 0, f"Values under 0 exist in high-pass filtered trace: smallest value is {trace_high_pass_shifted.min()}"
+    trace_highpass = trace - uniform_filter1d(trace, size=movmean_window)
+    trace_highpass_shifted = trace_highpass + 1 # Shift trace to be positive
+
+    assert trace_highpass_shifted.min() > 0, f"Values under 0 exist in high-pass filtered trace: smallest value is {trace_highpass_shifted.min()}"
 
     fig = plt.figure(figsize=(12, 8))
     gs = gridspec.GridSpec(3, 1, height_ratios=[2, 1, 0.1])
     ax_trace = fig.add_subplot(gs[0])
-    ax_movie = fig.add_subplot(gs[1])
+    ax_count = fig.add_subplot(gs[1])
     ax_slider = fig.add_subplot(gs[2])
 
     ax_trace.plot(trace, label='Normalized ROI trace')
-    ax_trace.plot(trace_high_pass, label='High-pass ROI trace')
+    ax_trace.plot(trace_highpass, label='High-pass ROI trace')
     spike_dots, = ax_trace.plot([], [], 'ro', label='Spikes')
     ax_trace.legend()
     ax_trace.set_title("Spike detection with adjustable threshold")
 
-    slider = Slider(ax_slider, 'Threshold', 1, 2, valinit=1.5, valstep=0.01)
+    bar = ax_count.bar(['Detected Spikes'], [0])
+    ax_count.set_ylim(0, 500)
+    ax_count.set_ylabel('Spike count')
+
+    slider = Slider(ax_slider, 'Threshold', 1, 1.5, valinit=1.1, valstep=0.01)
 
     def _update_threshold(val):
         nonlocal spikes
         threshold = val
-        peaks, _ = find_peaks(trace_high_pass_shifted, height=threshold, distance=10)
+        peaks, _ = find_peaks(trace_highpass_shifted, height=threshold, distance=min_distance)
         spikes = peaks
+
         spike_dots.set_data(peaks, trace[peaks])
         ax_trace.relim()
         ax_trace.autoscale_view()
+
+        # Update count bar
+        bar[0].set_height(len(peaks))
+        ax_count.set_ylim(0, max(len(peaks) + 5, 10))  # Auto scale y-axis
+        ax_count.set_title(f"{len(peaks)} spikes detected")
+
         fig.canvas.draw_idle()
 
     slider.on_changed(_update_threshold)
@@ -101,58 +116,36 @@ def detect_spikes_in_roi(trace):
 
     return spikes
 
-def extract_roi_sta(roi_trace, window_size):
-    roi_trace_norm = (roi_trace - roi_trace.min()) / (roi_trace.max() - roi_trace.min())
-    spike_indices = detect_spikes_in_roi(roi_trace_norm)
 
-    peri_spike_traces = []
-    n_frames = len(roi_trace)
+def extract_sta(movie, roi_traces):
+    n_frames, n_row, n_col = movie.shape
+    n_rois = roi_traces.shape[0]
+    first_trace = roi_traces[0,:]
+    spike_indices = detect_spikes(first_trace)
 
-    for idx in spike_indices:
-        if window_size < idx < n_frames - window_size:
-            trace_snippet = roi_trace_norm[idx - window_size: idx + window_size + 1]
-            peri_spike_traces.append(trace_snippet)
+    window_size = 2 * PULSE_FRAMES + 1
+    spikes = np.full((window_size, n_rois, len(spike_indices)), np.nan)
+    spike_movie = np.zeros((window_size, n_row, n_col))
 
+    c = 0  # spike counter
+    for i, spike_time in enumerate(spike_indices):
+        if PULSE_FRAMES < spike_time < (n_frames - PULSE_FRAMES):
+            # ROI trace segment
+            fs = roi_traces[:, (spike_time - PULSE_FRAMES):(spike_time + PULSE_FRAMES + 1)].T
+            f0 = np.mean(fs[:10, :], axis=0)
+            spikes[:, :, c] = fs - f0
 
-    if not peri_spike_traces:
-        print("No valid spikes found for spike-triggered averaging.")
+            # Movie segment
+            segment = movie[(spike_time - PULSE_FRAMES):(spike_time + PULSE_FRAMES + 1), :, :]
+            spike_movie += segment
+            c += 1
+
+    if c == 0:
+        print("No spikes in valid window range.")
         return None, None, spike_indices
 
-    peri_spike_traces = np.array(peri_spike_traces)
-    sta = np.mean(peri_spike_traces, axis=0)
-
-    return sta, spike_indices
-
-
-def spike_triggered_average_analysis(roi_traces):
-    n_rois = roi_traces.shape[0]
-
-    sta_per_roi = []
-    spike_indices_per_roi = []
-    window_size_ms = 25
-    window_size = int(window_size_ms * SAMPLING_RATE / 1000)  # in frames
-
-    for roi_trace in roi_traces:
-        sta, spike_indices = extract_roi_sta(roi_trace, window_size)
-
-        sta_per_roi.append(sta)
-        spike_indices_per_roi.append(spike_indices)
-
-    fig, ax = plt.subplots(n_rois, 1, figsize=(20, 20))
-    fig.tight_layout()
-
-    for roi_index in range(n_rois):
-        t = np.arange(-window_size, window_size + 1)
-        ax[roi_index].plot(t, sta_per_roi[roi_index], label=f'Spike-Triggered Average - ROI {roi_index + 1}')
-        ax[roi_index].set_xlabel("Frames relative to spike")
-        ax[roi_index].set_ylabel("Normalized fluorescence")
-        ax[roi_index].axvline(0, color='gray', linestyle='--', label='Spike time')
-        ax[roi_index].legend()
-
-    plt.tight_layout()
-    plt.show()
-
-    return spike_indices_per_roi, sta_per_roi
+    spike_movie_avg = spike_movie / c
+    return spike_movie_avg, spikes, spike_indices
 
 
 def build_spike_triggered_movie(spike_indices, movie, window_size, mask=None):
@@ -175,3 +168,5 @@ def build_spike_triggered_movie(spike_indices, movie, window_size, mask=None):
         return sta_movie
     else:
         return np.zeros((2 * window_size + 1, movie.shape[1], movie.shape[2]))
+
+

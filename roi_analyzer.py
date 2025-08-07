@@ -57,20 +57,21 @@ class ROISelector:
         return self.roi_masks, self.roi_vertices
 
 
-def extract_traces(movie, masks, avg_img):
+def extract_traces(movie, masks):
     n_frames = movie.shape[0]
     n_rois = len(masks)
     traces = np.zeros((n_rois, n_frames))
     f0 = np.zeros(n_rois)
+    baseline_period = slice(0, 100)
 
     for i, mask in enumerate(masks):
         # Average intensity within mask for each frame
         roi_pixels = movie[:, mask]
         traces[i, :] = roi_pixels.mean(axis=1)
-        f0[i] = avg_img[mask].mean() # Get baseline per ROI
+        f0[i] = roi_pixels[baseline_period].mean()
 
     # ΔF/F calculation
-    dff_traces = (traces - f0[:, np.newaxis]) / f0[:, np.newaxis]
+    dff_traces = traces / f0[:, np.newaxis]
 
     if PLOT_CLEANING_STEPS:
         fig, ax = plt.subplots(figsize=(12, 6))
@@ -89,6 +90,6 @@ def roi_analysis(movie):
     avg_img = get_average_image(movie)
     selector = ROISelector(avg_img)
     roi_masks, roi_vertices = selector.get_roi_data()
-    roi_traces = extract_traces(movie, roi_masks, avg_img)
+    roi_traces = extract_traces(movie, roi_masks)
 
     return roi_masks, roi_vertices, roi_traces

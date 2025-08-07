@@ -129,9 +129,9 @@ def _regress_out_poly2(movie, intensity=None):
     t = np.arange(n_frames)
 
     # Create regressors
-    t_centered = (t - np.mean(t)) / np.std(t)
+    t_centered = t - np.mean(t)
     t_quad = t_centered ** 2
-    t_quad = (t_quad - np.mean(t_quad)) / np.std(t_quad)
+    t_quad = t_quad - np.mean(t_quad)
 
     regressors = [t_centered, t_quad] if intensity is None else [intensity, t_centered, t_quad]
     X = np.vstack(regressors).T  # ← shape: (n_frames, 2 or 3), matching MATLAB regressor matrix
