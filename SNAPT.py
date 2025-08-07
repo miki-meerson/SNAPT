@@ -201,7 +201,6 @@ def snapt_algorithm(kernel, peri_spike_movie, save_dir):
     plt.imshow(rsq_mat, cmap='plasma')
     plt.colorbar()
     plt.title('R² map')
-    plt.savefig(os.path.join(save_dir, "r2_map.png"))
 
     plt.tight_layout()
     plt.savefig(os.path.join(save_dir, "snapt_summary.png"))  # full panel
@@ -232,17 +231,17 @@ def snapt_algorithm(kernel, peri_spike_movie, save_dir):
         sm.set_array([])
         fig.colorbar(sm, ax=ax, fraction=0.046, pad=0.04, label=f'{display_names[i]} map')
 
-    plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, f"weighted {display_names[i]}.png"))  # full panel
-    plt.show()
+        plt.tight_layout()
+        plt.savefig(os.path.join(save_dir, f"weighted {display_names[i]}.png"))
+        plt.show()
 
     return beta_mat, rsq_mat, good_fit
 
 
-def snapt_pipeline(spike_movie_avg, roi_traces, spike_indices, results_dir):
+def snapt_pipeline(spike_movie_avg, soma_trace, spike_indices, results_dir):
     os.makedirs(results_dir, exist_ok=True)
 
-    kernel = get_temporal_kernel(roi_traces[0], spike_indices)
+    kernel = get_temporal_kernel(soma_trace, spike_indices)
     peri_spike_movie = get_peri_spike_movie(spike_movie_avg)
 
     # Kernel visualization

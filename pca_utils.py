@@ -1,5 +1,9 @@
+import os
 import numpy as np
 from matplotlib import cm, pyplot as plt
+
+from basic_utils import save_movie_as_mp4
+from globals import *
 
 
 def flatten_movie(movie):
@@ -54,7 +58,7 @@ def visualize_eigenimages(eigenimages):
     plt.show()
 
 
-def get_movie_pca(peri_spike_movie, is_plot=True):
+def get_movie_pca(peri_spike_movie, is_plot=True, save_dir=PCA_RESULTS_DIR):
     n_frames, n_row, n_col = peri_spike_movie.shape  # T, H, W
     movie_flat = flatten_movie(peri_spike_movie)
     eigenvectors = get_movie_eigenvectors(movie_flat, is_flat=True)
@@ -91,10 +95,17 @@ def get_movie_pca(peri_spike_movie, is_plot=True):
         plt.suptitle("PCA-filtered response montage")
         plt.show()
 
-        for i in range(n_frames):
-            plt.imshow(color_movie[i])
-            plt.title(f"{i} ms")
-            plt.axis('off')
+        fig, ax = plt.subplots()
+        im = ax.imshow(color_movie[0])
+        title = ax.set_title("0 ms")
+        ax.axis('off')
+
+        for i in range(1, n_frames):
+            im.set_data(color_movie[i])
+            title.set_text(f"{i} ms")
             plt.pause(0.05)
+
+        save_path = os.path.join(save_dir, "pca_movie.mp4")
+        save_movie_as_mp4(color_movie, filename=save_path, fps=10)
 
     return movie_pca

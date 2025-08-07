@@ -2,6 +2,10 @@ import os
 import numpy as np
 import tifffile
 import xml.etree.ElementTree as ET
+
+from matplotlib import pyplot as plt
+from matplotlib.animation import FFMpegWriter
+
 from globals import *
 
 
@@ -54,3 +58,20 @@ def basic_movie_preprocessing(movie):
     movie -= np.percentile(avg_img, 20)
 
     return movie
+
+
+def save_movie_as_mp4(color_movie, filename="pca_movie.mp4", fps=10):
+    n_frames = color_movie.shape[0]
+    fig, ax = plt.subplots()
+    im = ax.imshow(color_movie[0])
+    ax.axis('off')
+
+    writer = FFMpegWriter(fps=fps)
+
+    with writer.saving(fig, filename, dpi=100):
+        for i in range(n_frames):
+            im.set_data(color_movie[i])
+            ax.set_title(f"{i} ms")
+            writer.grab_frame()
+    plt.close(fig)
+    print(f"Saved video to: {filename}")

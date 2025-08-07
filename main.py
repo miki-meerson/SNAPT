@@ -25,17 +25,17 @@ if __name__ == '__main__':
 
     # Apply Clicky and get traces per ROI
     roi_masks, roi_vertices, roi_traces = roi_analysis(movie)
+    soma_trace = roi_traces[0]
 
     # Detect spikes and get STA
     spike_movie_avg, spikes, spike_indices = extract_sta(movie, roi_traces)
 
-    snapt_pipeline(spike_movie_avg, roi_traces, spike_indices, results_dir=RAW_RESULTS_DIR)
+    snapt_pipeline(spike_movie_avg, soma_trace, spike_indices, results_dir=RAW_RESULTS_DIR)
 
     # # Try SNAPT again on the PCA movie
-    # pca_movie = get_movie_pca(sta_movie)
-    # pca_movie[:, ~bright_pixel_mask] = 0
-    # snapt_pipeline(pca_movie, results_dir=PCA_RESULTS_DIR)
-    #
+    pca_movie = get_movie_pca(spike_movie_avg)
+    snapt_pipeline(pca_movie, soma_trace, spike_indices, results_dir=PCA_RESULTS_DIR)
+
     # validations_pipeline(sta_movie)
     input("Press Enter to exit...")
 
