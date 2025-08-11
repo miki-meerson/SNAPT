@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 from matplotlib import pyplot as plt
 from matplotlib.animation import FFMpegWriter
 
-from globals import *
+import constants
 
 
 def _read_raw_movie(path, dtype=np.uint16):
@@ -20,8 +20,8 @@ def _read_raw_movie(path, dtype=np.uint16):
 
     # Find the LSM tag and get the frameRate attribute
     lsm = root.find("LSM")
-    globals.SAMPLING_RATE = int(float(lsm.attrib['frameRate'].replace(',', '')))
-    print('Frame rate:', SAMPLING_RATE)
+    constants.SAMPLING_RATE = int(float(lsm.attrib['frameRate'].replace(',', '')))
+    print('Frame rate:', constants.SAMPLING_RATE)
 
     width = int(root[5].attrib['width'])
     height = int(root[5].attrib['height'])
@@ -49,7 +49,7 @@ def read_movie(path, dtype=np.uint16):
 
 
 def basic_movie_preprocessing(movie):
-    if IS_NEGATIVE_GEVI: movie = -movie
+    if constants.IS_NEGATIVE_GEVI: movie = -movie
 
     movie = movie.astype(np.float32)
 

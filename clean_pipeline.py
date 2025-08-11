@@ -4,7 +4,7 @@ from scipy.signal import savgol_filter
 import matplotlib.pyplot as plt
 from tifffile import tifffile
 
-from globals import *
+from constants import *
 
 
 def high_pass_filter(signal, low_freq_to_filter):
@@ -41,7 +41,7 @@ def _detect_intensity_drops(intensity, window_length=11, polyorder=3, bad_frames
     return bad_frames
 
 
-def clean_intensity_noise(movie, initial_threshold=-3.5):
+def clean_intensity_drops(movie, initial_threshold=-3.5):
     """Interactively adjust the intensity drop threshold for bad frame detection using a slider."""
     intensity = _compute_intensity(movie)
 
@@ -109,7 +109,6 @@ def clean_intensity_noise(movie, initial_threshold=-3.5):
     final_cleaned_movie = np.delete(movie, final_bad, axis=0)
 
     return final_cleaned_movie
-
 
 
 def _compute_psd(signal):
@@ -248,7 +247,7 @@ def clean_movie_pipeline(movie_original, save_clean=False):
     """ Pipeline of all cleaning functions - return the clean movie """
 
     print("Cleaning the data...")
-    movie_clean = clean_power_spectrum_noise(clean_intensity_noise(movie_original))
+    movie_clean = clean_power_spectrum_noise(clean_intensity_drops(movie_original))
 
     intensity_raw = _compute_intensity(movie_original)
     intensity_clean = _compute_intensity(movie_clean)

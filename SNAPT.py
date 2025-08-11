@@ -9,7 +9,7 @@ from scipy.interpolate import interp1d
 from scipy.optimize import curve_fit
 import warnings
 
-from globals import *
+from constants import *
 
 
 def compute_kernel_projection_maps(movie, kernel):

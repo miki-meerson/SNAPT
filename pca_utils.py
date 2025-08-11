@@ -3,7 +3,7 @@ import numpy as np
 from matplotlib import cm, pyplot as plt
 
 from basic_utils import save_movie_as_mp4
-from globals import *
+from constants import *
 
 
 def flatten_movie(movie):

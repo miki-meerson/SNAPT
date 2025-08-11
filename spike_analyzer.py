@@ -4,7 +4,7 @@ from matplotlib.widgets import Slider
 from scipy.signal import find_peaks
 from scipy.ndimage import uniform_filter1d
 
-from globals import *
+from constants import *
 from clean_pipeline import high_pass_filter
 from roi_analyzer import get_average_image
 from scipy.signal import find_peaks

@@ -6,7 +6,7 @@ from validations import validations_pipeline
 
 matplotlib.use('TkAgg')
 
-from globals import *
+from constants import *
 from roi_analyzer import roi_analysis
 from spike_analyzer import build_spike_triggered_movie, get_bright_pixel_mask, extract_sta
 from pca_utils import get_movie_pca
@@ -14,8 +14,8 @@ from SNAPT import snapt_pipeline
 
 
 if __name__ == '__main__':
-    path = "Z:/Adam-Lab-Shared/Data/Michal_Rubin/Dendrites/AceM-neon/AcAx3/28-10-2024-acax3-s4-awake/fov1/vol_001/vol.tif"
-    # path = "Z:/Adam-Lab-Shared/Data/Efrat_Sheinbach/Imaging_Data/2023-07-09_088R1/R-FOV1/spont_1000hz_15sec/Image_001_001.raw"
+    # path = "Z:/Adam-Lab-Shared/Data/Michal_Rubin/Dendrites/AceM-neon/AcAx3/28-10-2024-acax3-s4-awake/fov1/vol_001/vol.tif"
+    path = "Z:/Adam-Lab-Shared/Data/Efrat_Sheinbach/Imaging_Data/2023-07-09_088R1/R-FOV1/spont_1000hz_15sec/Image_001_001.raw"
     # path = "./vol.tif"
     # clean_path = "./clean_movie.tif"
 
@@ -32,7 +32,7 @@ if __name__ == '__main__':
 
     snapt_pipeline(spike_movie_avg, soma_trace, spike_indices, results_dir=RAW_RESULTS_DIR)
 
-    # # Try SNAPT again on the PCA movie
+    # Try SNAPT again on the PCA movie
     pca_movie = get_movie_pca(spike_movie_avg)
     snapt_pipeline(pca_movie, soma_trace, spike_indices, results_dir=PCA_RESULTS_DIR)
 

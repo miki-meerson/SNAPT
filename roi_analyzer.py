@@ -3,7 +3,7 @@ import numpy as np
 from matplotlib.widgets import LassoSelector
 from skimage.draw import polygon2mask
 
-from globals import PLOT_CLEANING_STEPS
+from constants import PLOT_CLEANING_STEPS
 
 
 def get_average_image(movie, plot=False):
