@@ -1,7 +1,10 @@
 %%
 clc;clearvars;close all
+%%
+addonPath = fullfile(getenv('APPDATA'), 'MathWorks', 'MATLAB Add-Ons', 'Collections', 'ROI');
+%%
 
-movname = 'Z:\Adam-Lab-Shared\Data\Michal_Rubin\Dendrites\AceM-neon\AcAx3\28-10-2024-acax3-s4-awake\fov1\vol_001\vol.tif';
+movname = '..\vol.tif';
 info = imfinfo(movname);
 nframes = numel(info);
 mov = zeros(info(1).Height, info(1).Width, nframes, 'uint16');
@@ -10,58 +13,81 @@ for k = 1:nframes
     mov(:,:,k) = imread(movname, 'Index', k, 'Info', info);
 end
 toc
-%%
-movR = -double(mov);
 
 %%
+filename = '../efrat_video.raw';
+width = 236;       % image width in pixels
+height = 146;      % image height in pixels
+nframes = 15000;     % number of frames
+datatype = 'uint16';  % match your data type (commonly 'uint16' or 'uint8')
+
+% Open and read the raw binary file
+fid = fopen(filename, 'r');
+raw_data = fread(fid, width * height * nframes, datatype);
+fclose(fid);
+
+% Reshape into 3D movie [Height x Width x Time]
+mov = reshape(raw_data, [width, height, nframes]);
+mov = permute(mov, [2 1 3]);  % to get [height x width x nframes]
+%%
+movie = -double(mov);
+
+%% Preprocessing
+
 % check the noise:
-intens = squeeze(mean(mean(movR)));
+intens = squeeze(mean(mean(movie)));
 t = 1:length(intens);
-figure(1); clf
+figure
 plot(t, intens, 'k-');
+title("Average intensity over time");
 
-%%
 % get rid of the bad frames;
 intensHP = intens - smoothdata(intens, 'sgolay', 10);
-figure(1);
+figure;
 plot(intensHP)
 badFrames = find(intensHP < -3.5);
 plot(t, intens, 'k-', badFrames, intens(badFrames), 'r*')
-movR(:,:,badFrames) = [];
+movie(:,:,badFrames) = [];
 title("Bad Frames")
 
 % start again
-avgImg = mean(movR, 3);
+avgImg = mean(movie, 3);
 avgImg = avgImg - prctile(avgImg(:), 20);
 
 % check the noise:
-intens = squeeze(mean(mean(movR)));
+intens = squeeze(mean(mean(movie)));
 t = 1:length(intens);
-figure(2);
+figure;
 plot(t, intens, 'k-');
 title("Clean")
 
-%%
 % check the power spectrum of the noise
 intensPSD = fft(intens).*conj(fft(intens));
 freq = (0:length(intensPSD)-1)*1000/length(intensPSD);
-figure(2); clf
-semilogy(freq, intensPSD)
+
 % the systematic noise is mostly at > 150 Hz
 smoothT = 15;  %ms. filter at ~60 Hz
 intensHP = intens - smooth(intens, smoothT, 'sgolay', 2);
+figure;
 plot(t, intensHP)
-noisePSD = fft(intensHP).*conj(fft(intensHP));
-semilogy(freq, intensPSD, freq, noisePSD)
+title("Average intensity highpass")
+
+figure;
+intensHP_PSD = fft(intensHP).*conj(fft(intensHP));
+semilogy(freq, intensPSD, freq, intensHP_PSD);
+legend('Raw PSD', 'High-pass (residual) PSD');
+xlabel('Frequency (Hz)');
+ylabel('Power');
+title("original vs. highpass intensity PSDs");
 
 % Get rid of the first few frames where the filter doesn't work:
-movR2 = movR(:,:,10:end);
+movie_temp = movie(:,:,10:end);
 intensHP2 = intensHP(10:end);
-[~,~,nframe2]=size(movR2);
+[~,~,nframe2]=size(movie_temp);
 t2 = 1:nframe2;
 
-%% project out the high freq noise and any linear or quadratic drift
-[nrow, ncol, ~] = size(movR2);
+% project out the high freq noise and any linear or quadratic drift
+[nrow, ncol, ~] = size(movie_temp);
 regressors = [intensHP2'; t2 - mean(t2); (t2 - mean(t2)).^2];
 regressors = regressors';  % [T x R]
 regressors = regressors - mean(regressors);  % center regressors
@@ -70,20 +96,19 @@ regressors = regressors - mean(regressors);  % center regressors
 X = regressors;
 pinvX = pinv(X);  % [R x T]
 
-movR2_clean = zeros(size(movR2));
+movie_clean = zeros(size(movie_temp));
 scaleImgs = zeros(nrow, ncol, size(regressors, 2));
 
 for y = 1:nrow
     for x = 1:ncol
-        ytrace = squeeze(movR2(y, x, :));  % [T x 1]
+        ytrace = squeeze(movie_temp(y, x, :));  % [T x 1]
         beta = pinvX * ytrace;             % [R x 1]
         fit = X * beta;                    % [T x 1]
-        movR2_clean(y, x, :) = ytrace - fit;
+        movie_clean(y, x, :) = ytrace - fit;
         scaleImgs(y, x, :) = beta;
     end
 end
 
-movR2 = movR2_clean;
 for j = 1:3
     subplot(2, 2, j)
     imagesc(scaleImgs(:, :, j)); 
@@ -93,32 +118,33 @@ for j = 1:3
     title(['Regressor ' num2str(j)]);
 end
 
-%%
-figure(3); clf
-intens2 = squeeze(mean(mean(movR2)));
-plot(intens, DisplayName="Original"); hold all;
-plot(intens2, DisplayName="Clean")
+figure;
+intens_clean = squeeze(mean(mean(movie_clean)));
+plot(intens, DisplayName="Original"); hold on;
+plot(intens_clean, DisplayName="Clean")
+legend;
 
-%%
-[ROI, Intens]=clicky3(movR2_clean, avgImg);  % Start at soma.
+%% ROI analysis
+
+[ROI, roi_intens]=clicky3(movie_clean, avgImg);  % Start at soma
 
 % convert to units of dF/F
 f0 = apply_clicky(ROI, avgImg);
-Intens = Intens./repmat(f0, [length(Intens), 1]);
+roi_intens = roi_intens./repmat(f0, [length(roi_intens), 1]);
 
-plot(Intens)
+plot(roi_intens)
 
 %% Find Spikes
 % All the spikes are basically in the soma only.
-Intens=intens2; 
-figure(4); clf
-plot(Intens)
-allMov = movR2_clean;
-nframe=length(Intens);
-nRoi=size(Intens,2);
+Intens=intens_clean; 
+figure;
+plot(intens_clean)
+full_movie = movie_clean;
+nframe=length(intens_clean);
+nRoi=size(intens_clean,2);
 Pulse=50;  % time to look before and after each spike
-t=1:length(Intens);
-f=mat2gray(Intens(:,1));  % Use the first clicky ROI for spike finding
+t=1:length(intens_clean);
+f=mat2gray(intens_clean(:,1));  % Use the first clicky ROI for spike finding
 fhp=f-smoothdata(f,'movmean',40);
 spikeT = spikefind2(fhp+1,10,1.05);pause(1);close
 nSpike = length(spikeT);
@@ -131,7 +157,7 @@ for j=1:nSpike  % Calculate the average spike waveform in each ROI
         fs=Intens((spikeT(j)-Pulse):(spikeT(j)+Pulse),:);
         f0=mean(fs(1:10,:),1);
         spikes(:,:,j)=(fs-repmat(f0, [2*Pulse+1 1]));
-        spikeMov = spikeMov + allMov(:,:,(spikeT(j)-Pulse):(spikeT(j)+Pulse));
+        spikeMov = spikeMov + full_movie(:,:,(spikeT(j)-Pulse):(spikeT(j)+Pulse));
         c = c + 1;
     
     else

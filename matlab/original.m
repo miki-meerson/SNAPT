@@ -1,47 +1,33 @@
 %%
 clc;clearvars;close all
+sz=get(0,'screensize');
+cd('X:\Lab\Labmembers\Yoav Adam\Data\In Vivo\Hippocampus\IVQ9\2016-06-21_IVQ9-S2\FOV1\172750_Spont_Dilas-10V_488-OD2.0');
+movR = double(readBinMov3('movReg'));
+[nrow,ncol,nframe]=size(movR);
 
-movname = 'Z:\Adam-Lab-Shared\Data\Michal_Rubin\Dendrites\AceM-neon\AcAx3\28-10-2024-acax3-s4-awake\fov1\vol_001\vol.tif';
-info = imfinfo(movname);
-nframes = numel(info);
-mov = zeros(info(1).Height, info(1).Width, nframes, 'uint16');
-tic
-for k = 1:nframes
-    mov(:,:,k) = imread(movname, 'Index', k, 'Info', info);
-end
-toc
-%%
-movR = -double(mov);
-
-%%
 % check the noise:
 intens = squeeze(mean(mean(movR)));
 t = 1:length(intens);
 figure(1); clf
 plot(t, intens, 'k-');
 
-%%
 % get rid of the bad frames;
 intensHP = intens - smoothdata(intens, 'sgolay', 10);
-figure(1);
 plot(intensHP)
 badFrames = find(intensHP < -3.5);
 plot(t, intens, 'k-', badFrames, intens(badFrames), 'r*')
 movR(:,:,badFrames) = [];
-title("Bad Frames")
 
 % start again
+[nrow,ncol,nframe]=size(movR);
 avgImg = mean(movR, 3);
 avgImg = avgImg - prctile(avgImg(:), 20);
 
 % check the noise:
 intens = squeeze(mean(mean(movR)));
 t = 1:length(intens);
-figure(2);
 plot(t, intens, 'k-');
-title("Clean")
 
-%%
 bOnImg = mean(movR(:,:,300:1900),3);
 bOffImg = mean(movR(:,:,2000:2500),3);
 bOnImg = bOnImg - prctile(bOnImg(:), 20);
@@ -50,7 +36,7 @@ subplot(1,2,1);
 imshow2(bOnImg, []);
 subplot(1,2,2);
 imshow2(bOffImg, []);
-%%
+
 % check the power spectrum of the noise
 intensPSD = fft(intens).*conj(fft(intens));
 freq = (0:length(intensPSD)-1)*1000/length(intensPSD);
@@ -66,59 +52,25 @@ semilogy(freq, intensPSD, freq, noisePSD)
 % Get rid of the first few frames where the filter doesn't work:
 movR2 = movR(:,:,10:end);
 intensHP2 = intensHP(10:end);
-[~,~,nframe2]=size(movR2);
+[nrow,ncol,nframe2]=size(movR2);
 t2 = 1:nframe2;
-%%
+
 % project out the high freq noise and any linear or quadratic drift
-[movR2, scaleImgs] = seeResiduals(movR2, [intensHP2'; t2 - mean(t2); (t2 - mean(t2)).^2], 1);
-for j = 1:4
+[movR2, scaleImgs] = SeeResiduals(movR2, [intensHP2'; t2 - mean(t2); (t2 - mean(t2)).^2], 1);
+for j = 1:4;
     subplot(2,2,j)
     imshow2(scaleImgs(:,:,j), []);
-end
-%% Miki added - instead of "SeeResiduals" which is missing
-[nrow, ncol, ~] = size(movR2);
-regressors = [intensHP2'; t2 - mean(t2); (t2 - mean(t2)).^2];
-regressors = regressors';  % [T x R]
-regressors = regressors - mean(regressors);  % center regressors
+end;
 
-% Precompute pseudoinverse for efficiency
-X = regressors;
-pinvX = pinv(X);  % [R x T]
-
-movR2_clean = zeros(size(movR2));
-scaleImgs = zeros(nrow, ncol, size(regressors, 2));
-
-for y = 1:nrow
-    for x = 1:ncol
-        ytrace = squeeze(movR2(y, x, :));  % [T x 1]
-        beta = pinvX * ytrace;             % [R x 1]
-        fit = X * beta;                    % [T x 1]
-        movR2_clean(y, x, :) = ytrace - fit;
-        scaleImgs(y, x, :) = beta;
-    end
-end
-
-movR2 = movR2_clean;
-for j = 1:3
-    subplot(2, 2, j)
-    imagesc(scaleImgs(:, :, j)); 
-    axis image off; 
-    colormap(gray); 
-    colorbar;
-    title(['Regressor ' num2str(j)]);
-end
-%%
 figure(3); clf
 intens2 = squeeze(mean(mean(movR2)));
-plot(intens, DisplayName="Original"); hold all;
-plot(intens2, DisplayName="Clean")
-%%
+plot(intens2)
 % Define the transitions by hand
 blueOff = [1984; 5978; 9973; 13970; 17966; 21963];
 blueOn = [1; 3984; 7979; 11973; 15972; 19967];
 
 nEpoch = length(blueOff);
-for j = 1:nEpoch
+for j = 1:nEpoch;
     %     BlueOn(:,j) = (blueOn(j) + 50):(blueOn(j) + 1949);
     %     BlueOff(:,j) = (blueOff(j) + 50):(blueOff(j) + 1949);
     BlueOn(:,j) = (blueOn(j) + 80):(blueOn(j) + 1979);
@@ -134,12 +86,12 @@ figure(1); clf
 plot(t, intens, 'k-'); hold all;
 nOn = size(BlueOn, 2);
 nOff = size(BlueOff, 2);
-for j = 1:nOn
+for j = 1:nOn;
     plot(BlueOn(:,j), intens(BlueOn(:,j)), 'b-');
-end
-for j = 1:nOff
+end;
+for j = 1:nOff;
     plot(BlueOff(:,j), intens(BlueOff(:,j)), 'r-');
-end
+end;
 hold off
 
 % assemble the movies into blue on and blue off components
@@ -174,7 +126,7 @@ plot(squeeze(mean(mean(movBoff))));
 plot(squeeze(mean(mean(movBon))));
 plot(squeeze(mean(mean(movBoff))));
 % movBoff=double(pblc(vm(movBoff)));
-%%
+
 [ROI, Intens1]=clicky3(movBon, avgImg);  % Start at soma.
 % convert to units of dF/F
 f0 = apply_clicky(ROI, bOnImg);
@@ -192,16 +144,8 @@ f0 = apply_clicky(ROI, avgImg);
 Intens3 = Intens3./repmat(f0, [length(Intens3), 1]);
 
 plot(Intens1)
-%% Miki added - do the previous section for entire video, not only blue periods
-[ROI, Intens3]=clicky3(movR2_clean, avgImg);  % Start at soma.
 
-% convert to units of dF/F
-f0 = apply_clicky(ROI, avgImg);
-Intens3 = Intens3./repmat(f0, [length(Intens3), 1]);
-
-plot(Intens3)
-%%
-[nrow,ncol,~]=size(movBon);
+[nrow,ncol,nframe]=size(movBon);
 
 clear mov1 mov2 tmp1 tmp2 g
 
@@ -243,17 +187,17 @@ spikeMov = zeros(nrow, ncol, 2*Pulse + 1);
 spikeMovBon = zeros(nrow, ncol, 2*Pulse + 1);
 c = 1; % spike counter
 cB = 1; % spike counter
-for j=1:nSpike  % Calculate the average spike waveform in each ROI
+for j=1:nSpike;  % Calculate the average spike waveform in each ROI
     if spikeT(j)>Pulse && spikeT(j)<nframe-Pulse
         fs=Intens((spikeT(j)-Pulse):(spikeT(j)+Pulse),:);
         f0=mean(fs(1:10,:),1);
         spikes(:,:,j)=(fs-repmat(f0, [2*Pulse+1 1]));
         spikeMov = spikeMov + allMov(:,:,(spikeT(j)-Pulse):(spikeT(j)+Pulse));
         c = c + 1;
-        if spikeT(j) < length(movBon)  % the blue on only spike movie
+        if spikeT(j) < length(movBon);  % the blue on only spike movie
             spikeMovBon = spikeMovBon + allMov(:,:,(spikeT(j)-Pulse):(spikeT(j)+Pulse));
             cB = cB + 1;
-        end
+        end;
     else
         spikes(:,:,j)=NaN(2*Pulse+1, nRoi);
     end
@@ -271,62 +215,22 @@ plot(mat2gray(tmp(:,3))); hold off
 % spikeIntensN = bsxfun(@minus, spikeIntens, mean(spikeIntens(1:20,:),1));
 % spikeIntensN = bsxfun(@times, spikeIntensN, 1./(mean(spikeIntens(95:100,:),1) - mean(spikeIntens(1:20,:),1)));
 
-%% Miki added - full movie instead of concatenated blue on and off periods
-% All the spikes are basically in the soma only.
-Intens=intens2; 
-figure(4); clf
-plot(Intens)
-allMov = movR2_clean;
-nframe=length(Intens);
-nRoi=size(Intens,2);
-Pulse=50;  % time to look before and after each spike
-t=1:length(Intens);
-f=mat2gray(Intens(:,1));  % Use the first clicky ROI for spike finding
-fhp=f-smoothdata(f,'movmean',40);
-spikeT = spikefind2(fhp+1,10,1.05);pause(1);close
-nSpike = length(spikeT);
-spikes = zeros(2*Pulse+1, nRoi, nSpike);
-spikeMov = zeros(nrow, ncol, 2*Pulse + 1);
-
-c = 1; % spike counter
-for j=1:nSpike  % Calculate the average spike waveform in each ROI
-    if spikeT(j)>Pulse && spikeT(j)<nframe-Pulse
-        fs=Intens((spikeT(j)-Pulse):(spikeT(j)+Pulse),:);
-        f0=mean(fs(1:10,:),1);
-        spikes(:,:,j)=(fs-repmat(f0, [2*Pulse+1 1]));
-        spikeMov = spikeMov + allMov(:,:,(spikeT(j)-Pulse):(spikeT(j)+Pulse));
-        c = c + 1;
-    
-    else
-        spikes(:,:,j)=NaN(2*Pulse+1, nRoi);
-    end
-end
-spikeMov = spikeMov/c;
-%%
-playmov(spikeMov(:,:,(Pulse-10):(Pulse+10)), .1, 1)
-[~, tmp] = clicky3(spikeMov);
-plot(mat2gray(tmp(:,1))); hold all
-plot(mat2gray(tmp(:,2)));
-plot(mat2gray(tmp(:,3))); 
-
-%% 
 %Select a time just around the peak to use for the SNAPT fit
 kernel = squeeze(mean(mean(spikeMov)));  % Flat average isn't as good as...
 [~, kernel] = clicky(spikeMov, avgImg);  % clicking on the soma and proximal dendrite.
-%%
 kernel = kernel((Pulse-13):(Pulse+17));
 kernel = mat2gray(kernel);  % Set the kernel to range from 0 to 1
-%%
+
 spikeMovFit = spikeMov(:,:,(Pulse-13):(Pulse+17));
 spikeMovFit = imfilter(spikeMovFit, fspecial('Gaussian', [4 4], 1.5), 'replicate');  % filter a bit to smooth noise
 spikeMovFit = (spikeMovFit - min(spikeMovFit(:)))/(max(spikeMovFit(:)) - min(spikeMovFit(:)));  % Set the max value of the spike movie to 1
 [Vout, corrimg, weightimg, offsetimg] = extractV(spikeMovFit, kernel);
 subplot(2,2,1); plot(Vout); hold all; plot(kernel);
-subplot(2,2,2); imshow(corrimg, []); title('Corr')
-subplot(2,2,3); imshow(weightimg, []); title('Weight')
-subplot(2,2,4); imshow(offsetimg, []); title('Offset')
+subplot(2,2,2); imshow2(corrimg, []); title('Corr')
+subplot(2,2,3); imshow2(weightimg, []); title('Weight')
+subplot(2,2,4); imshow2(offsetimg, []); title('Offset')
 
-%%
+%
 spikeMovFit = spikeMovPCA(:,:,(Pulse-13):(Pulse+17)); % only do for fitting to the PCA-filtered movie.  The PCA is below
 playmov(spikeMovFit, .1, 1)
 %
@@ -341,10 +245,10 @@ cimat = zeros(ysize, xsize, 4,2); % Matrix of confidence intervals for each fit 
 rsquaremat = zeros(ysize, xsize);  % Matrix of r^2, indicating goodness of fit at each pixel
 goodfit = ones(ysize, xsize);  % matrix indicating pixels where the fit succeeded
 
-% Perform the fit!  This is the heart of the SNAPT algorithm.
+%% Perform the fit!  This is the heart of the SNAPT algorithm.
 
-for x = 1:xsize
-    for y = 1:ysize
+for x = 1:xsize;
+    for y = 1:ysize;
         dat = squeeze(spikeMovFit(y,x,:));  % Take the AP waveform at pixel y,x
         lastwarn('');
         % Perform four-parameter fit.  Input is k(t).  Output is a*k(c*(t-dt)) + b,
@@ -356,9 +260,9 @@ for x = 1:xsize
         end
         rsquaremat(y,x) = 1 - var(r)/var(dat);
         cimat(y,x,:,:) = nlparci(squeeze(betamat2(y,x,:)), r, 'covar', COVB, 'alpha', .318);  % these are the 68% confidence intervals
-    end
-    ['Completed column ' num2str(x)];
-end
+    end;
+    ['Completed column ' num2str(x)]
+end;
 ampimg = betamat2(:,:,1);
 baseimg = betamat2(:,:,2);
 widthimg = 1./betamat2(:,:,3);
@@ -408,58 +312,54 @@ subplot(2,3,1); imshow(ampimg, [], 'InitialMagnification', 'fit'); title('Amplit
 subplot(2,3,2); imshow(baseimg, [], 'InitialMagnification', 'fit'); title('Offset image'); freezeColors;
 subplot(2,3,4); imshow(widthimg, [], 'InitialMagnification', 'fit'); title('width image'); freezeColors;
 subplot(2,3,5); imshow(dtimg, [], 'InitialMagnification', 'fit'); title('Delay image'); freezeColors;
-subplot(2,3,6); rsquare_map(rsquaremat, 0.8); title('R^2'); % This function uses a nice colormap to make results easier to interpret
+subplot(2,3,6); rsquare_map(rsquaremat, 0.8); title(['R^2']); % This function uses a nice colormap to make results easier to interpret
 unfreezeColors
 
 % Make a pretty color image of the delay
 figure(18); clf
 dtColImg = grs2rgb(dtimg, colormap('jet'), 0, 1);
 dtColImg = dtColImg.*repmat(mat2gray(ampimg)*3 - .1, [1 1 3]);
-imshow(dtColImg)
+imshow2(dtColImg)
 colorbar
 title('Delay map (ms)')
-saveas(gca, '.\snapt_results\matlab\delay map.fig')
-saveas(gca, '.\snapt_results\matlab\delay map.png')
+% saveas(gca, 'C:\Users\Adam\Desktop\update mtgs\In vivo\Short_Fig2\delay map.fig')
+% saveas(gca, 'C:\Users\Adam\Desktop\update mtgs\In vivo\Short_Fig2\delay map.png')
+saveas(gca, 'C:\Users\Adam\Desktop\update mtgs\In vivo\Short_Fig2\delay map PCA filt.fig')
+saveas(gca, 'C:\Users\Adam\Desktop\update mtgs\In vivo\Short_Fig2\delay map PCA filt.png')
 
 % Make a pretty color image of the spike width
 figure(19); clf
 widthColImg = grs2rgb(widthimg, colormap('jet'), .6, 1.4);
 widthColImg = widthColImg.*repmat(mat2gray(ampimg)*3 - .1, [1 1 3]);
-imshow(widthColImg)
+imshow2(widthColImg)
 title('width map')
-colorbar('Ticks',0:.25:1,...
+colorbar('Ticks',[0:.25:1],...
     'TickLabels',{'0.6', '0.8', '1.0', '1.2', '1.4'})
-saveas(gca, '.\snapt_results\matlab\width map.fig')
-saveas(gca, '.\snapt_results\matlab\width map.png')
+saveas(gca, 'C:\Users\Adam\Desktop\update mtgs\In vivo\Short_Fig2\width map PCA filt.fig')
+saveas(gca, 'C:\Users\Adam\Desktop\update mtgs\In vivo\Short_Fig2\width map PCA filt.png')
+
 
 %% PCA filter spikeMovFit
-
 dSpikeMov = spikeMov - repmat(mean(spikeMov(:,:,:), 3), [1 1 size(spikeMov(:,:,:),3)]);
 % dSpikeMov = imfilter(dSpikeMov, fspecial('Gaussian', [4 4], 1.5), 'replicate');
 % dSpikeMov = spikeMovFit - repmat(mean(spikeMovFit, 3), [1 1 size(spikeMovFit,3)]);
 
-spikeMovV = reshape(dSpikeMov, [], size(dSpikeMov, 3));
+spikeMovV = tovec(dSpikeMov);
 covMat = spikeMovV'*spikeMovV;
-[VSpikes, ~] = eig(covMat);
+[VSpikes, D] = eig(covMat);
 VSpikes = VSpikes(:,end:-1:1);
 VSpikes(:,1) = -VSpikes(:,1);  %manually set the signs of some of the terms to be more intuitive
 VSpikes(:,3) = -VSpikes(:,3);
 figure(1); clf
 stackplot(VSpikes(:,1:20))
-
-vec = spikeMovV*VSpikes(:,1:9);
-eigImgsSpikes = reshape(vec, nrow, ncol, size(vec, 2));
-
+eigImgsSpikes = toimg(spikeMovV*VSpikes(:,1:9), nrow, ncol);
 figure(2); clf
-for j = 1:9
+for j = 1:9;
     subplot(3,3,j)
-    imshow(eigImgsSpikes(:,:,j), [])
-end
+    imshow2(eigImgsSpikes(:,:,j), [])
+end;
 
-spikesFiltPCA = eigImgsSpikes(:,:,1:3);
-spikesFiltPCAVec = reshape(spikesFiltPCA, [], size(spikesFiltPCA, 3));
-
-spikeMovPCA = toimg(spikesFiltPCAVec*(VSpikes(:,1:3)'), nrow, ncol);  % reconstruct the PCA filtered spike movie
+spikeMovPCA = toimg(tovec(eigImgsSpikes(:,:,1:3))*(VSpikes(:,1:3)'), nrow, ncol);  % reconstruct the PCA filtered spike movie
 clicky(spikeMovPCA, avgImg);
 saveas(gca, 'C:\Users\Adam\Desktop\update mtgs\In vivo\Short_Fig2\clicky spikeMovPCA.fig');
 saveas(gca, 'C:\Users\Adam\Desktop\update mtgs\In vivo\Short_Fig2\clicky spikeMovPCA.png');
@@ -471,141 +371,28 @@ playmov(spikeMovPCA, .1, 1)  % this looks great!
 
 ampImg = mat2gray(std(spikeMovPCA, [], 3));
 colormov = repmat(0.5 * mat2gray(ampImg), [1 1 3 nF]);
-for j = 1:nF
+for j = 1:nF;
     colormov(:,:,:,j) = colormov(:,:,:,j) + 3*ampImg.*grs2rgb(spikeMovPCA(:,:,j), colormap('jet'), 0, .4);
 end
-for j = 1:6
+for j = 1:6;
     subplot(2,3,j);
-    imshow(colormov(:,30:110,:,j+48))
+    imshow2(colormov(:,30:110,:,j+48))
+end;
+saveas(gca, 'X:\Lab\Papers\In vivo\Short_Fig2\montage.fig')
+saveas(gca, 'X:\Lab\Papers\In vivo\Short_Fig2\montage.png')
+
+while(1)
+    % clear M
+    for j = 1:nF
+        imshow2(colormov(:,:,:,j));
+        text(5, 5, [num2str(j) ' ms'], 'Color', 'White', 'FontSize', 18);
+        %     M(j) = getframe(gca);
+        pause(.1)
+    end;
 end
-saveas(gca, '.\snapt_results\matlab\montage.fig')
-saveas(gca, '.\snapt_results\matlab\montage.png')
+movie2avi(M,'C:\Users\Adam\Desktop\update mtgs\In vivo\Short_Fig2\spikeMov.avi', 'fps', 20, 'compression', 'none');
 
-for j = 1:nF
-    imshow2(colormov(:,:,:,j));
-    text(5, 5, [num2str(j) ' ms'], 'Color', 'White', 'FontSize', 18);
-    %     M(j) = getframe(gca);
-    pause(.1)
-end
-
-%% Try SNAPT again, on the PCA filtered movie:
-spikeMovFit = spikeMovPCA(:,:,(Pulse-13):(Pulse+17)); % only do for fitting to the PCA-filtered movie.  The PCA is below
-playmov(spikeMovFit, .1, 1)
-
-spikeMovFit = spikeMov(:,:,(Pulse-13):(Pulse+17));
-spikeMovFit = imfilter(spikeMovFit, fspecial('Gaussian', [4 4], 1.5), 'replicate');  % filter a bit to smooth noise
-spikeMovFit = (spikeMovFit - min(spikeMovFit(:)))/(max(spikeMovFit(:)) - min(spikeMovFit(:)));  % Set the max value of the spike movie to 1
-[Vout, corrimg, weightimg, offsetimg] = extractV(spikeMovFit, kernel);
-subplot(2,2,1); plot(Vout); hold all; plot(kernel);
-subplot(2,2,2); imshow(corrimg, []); title('Corr')
-subplot(2,2,3); imshow(weightimg, []); title('Weight')
-subplot(2,2,4); imshow(offsetimg, []); title('Offset')
-
-%Select a time just around the peak to use for the SNAPT fit
-kernel = squeeze(mean(mean(spikeMov)));  % Flat average isn't as good as...
-[~, kernel] = clicky(spikeMov, avgImg);  % clicking on the soma and proximal dendrite.
-kernel = kernel((Pulse-13):(Pulse+17));
-kernel = mat2gray(kernel);  % Set the kernel to range from 0 to 1
-
-% Set up the matrices to store the results
-xsize = ncol;
-ysize = nrow;
-betamat2 = zeros(ysize, xsize, 4);  % Matrix of fit parameters for each pixel
-cimat = zeros(ysize, xsize, 4,2); % Matrix of confidence intervals for each fit parameter at each pixel
-rsquaremat = zeros(ysize, xsize);  % Matrix of r^2, indicating goodness of fit at each pixel
-goodfit = ones(ysize, xsize);  % matrix indicating pixels where the fit succeeded
-
-% Perform the fit!  This is the heart of the SNAPT algorithm.
-for x = 1:xsize
-    for y = 1:ysize
-        dat = squeeze(spikeMovFit(y,x,:));  % Take the AP waveform at pixel y,x
-        lastwarn('');
-        % Perform four-parameter fit.  Input is k(t).  Output is a*k(c*(t-dt)) + b,
-        % where beta = [a,b,c,dt] is the vector of fitting parameters.
-        % This will generate warnings.  Don't worry.
-        [betamat2(y,x, :), r, J, COVB, mse] = nlinfit(kernel, dat, @shiftkern, [1 0 1 0], statset('Robust', 'off'));
-        if ~isempty(lastwarn)  % Flag pixels where fit failed
-            goodfit(y,x)=0;
-        end
-        rsquaremat(y,x) = 1 - var(r)/var(dat);
-        cimat(y,x,:,:) = nlparci(squeeze(betamat2(y,x,:)), r, 'covar', COVB, 'alpha', .318);  % these are the 68% confidence intervals
-    end
-    ['Completed column ' num2str(x)];
-end
-ampimg = betamat2(:,:,1);
-baseimg = betamat2(:,:,2);
-widthimg = 1./betamat2(:,:,3);
-dtimg = betamat2(:,:,4);
-
-% See where the fit converged
-figure(13); clf;
-imshow(goodfit,[], 'InitialMagnification', 'fit');
-title('Dark pixels indicate failed fit')
-
-% Check the raw amplitudes from the fit
-figure(14); clf;
-imshow(ampimg ,[prctile(ampimg(:),1), prctile(ampimg(:),99)], 'InitialMagnification', 'fit');
-title('Raw fit results for AP amplitude');
-
-% Set constraints on the fitting parameters.  Adjust these values as
-% appropriate.
-min_a = 0;  % Amplitude
-min_c = .2;  % Time scale factor
-max_c = 4;
-min_dt = -4; % Time shift (in frames)
-max_dt = 4;
-
-goodpix =   (ampimg > min_a).*...
-    (widthimg > min_c).*...
-    (widthimg < max_c).*...
-    (dtimg > min_dt).*...
-    (dtimg < max_dt);
-figure(13);clf;
-imshow(goodpix,[], 'InitialMagnification', 'fit');
-title('Bright pixels indicate that the fit satistfied constraints')
-
-% Set the amplitude to zero where the fit parameters lay outside the constraints;
-ampimg = ampimg.*goodpix;
-
-% constrain the time scaling to be within the boundaries
-widthimg(widthimg < min_c) = min_c;
-widthimg(widthimg > max_c) = max_c;
-
-% Constrain the time shift to be within the boundaries
-dtimg(dtimg < min_dt) = min_dt;
-dtimg(dtimg > max_dt) = max_dt;
-
-% Look at the results
-figure(17); clf; colormap('gray');
-subplot(2,3,1); imshow(ampimg, [], 'InitialMagnification', 'fit'); title('Amplitude image'); freezeColors;
-subplot(2,3,2); imshow(baseimg, [], 'InitialMagnification', 'fit'); title('Offset image'); freezeColors;
-subplot(2,3,4); imshow(widthimg, [], 'InitialMagnification', 'fit'); title('width image'); freezeColors;
-subplot(2,3,5); imshow(dtimg, [], 'InitialMagnification', 'fit'); title('Delay image'); freezeColors;
-subplot(2,3,6); rsquare_map(rsquaremat, 0.8); title('R^2'); % This function uses a nice colormap to make results easier to interpret
-unfreezeColors
-
-% Make a pretty color image of the delay
-figure(18); clf
-dtColImg = grs2rgb(dtimg, colormap('jet'), 0, 1);
-dtColImg = dtColImg.*repmat(mat2gray(ampimg)*3 - .1, [1 1 3]);
-imshow(dtColImg)
-colorbar
-title('Delay map (ms)')
-saveas(gca, '.\snapt_results\matlab\delay map PCA.fig')
-saveas(gca, '.\snapt_results\matlab\delay map PCA.png')
-
-% Make a pretty color image of the spike width
-figure(19); clf
-widthColImg = grs2rgb(widthimg, colormap('jet'), .6, 1.4);
-widthColImg = widthColImg.*repmat(mat2gray(ampimg)*3 - .1, [1 1 3]);
-imshow(widthColImg)
-title('width map')
-colorbar('Ticks',0:.25:1,...
-    'TickLabels',{'0.6', '0.8', '1.0', '1.2', '1.4'})
-saveas(gca, '.\snapt_results\matlab\width map PCA.fig')
-saveas(gca, '.\snapt_results\matlab\width map PCA.png')
-
-%%
+%% Try SNAPT again, on the PCA filtered movie.  Go back to the SNAPT section.
 
 % make an image of dF/F:
 avgImgS = imfilter(avgImg, fspecial('Gaussian', [4 4], 1.5), 'replicate');
@@ -1150,6 +937,5 @@ for i=1:6
         %colorbar
     end
 end
-
 
 
