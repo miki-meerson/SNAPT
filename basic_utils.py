@@ -39,23 +39,14 @@ def read_movie(path, dtype=np.uint16):
     print("Loading data...")
     movie_type = path.split('.')[-1]
     if movie_type == 'tif':
-        movie = tifffile.imread(path)
+        movie = tifffile.imread(path).astype(np.float64)
     elif movie_type == 'raw':
         movie = _read_raw_movie(path, dtype=dtype)
     else:
         raise ValueError('Unknown movie type: {}'.format(movie_type))
 
-    return movie
-
-
-def basic_movie_preprocessing(movie):
     if constants.IS_NEGATIVE_GEVI: movie = -movie
-
-    movie = movie.astype(np.float32)
-
-    # Subtract baseline to reduce background noise
-    avg_img = np.mean(movie, axis=0)
-    movie -= np.percentile(avg_img, 20)
+    print(movie.dtype, movie.min(), movie.max())
 
     return movie
 

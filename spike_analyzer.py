@@ -5,7 +5,7 @@ from scipy.signal import find_peaks
 from scipy.ndimage import uniform_filter1d
 
 from constants import *
-from clean_pipeline import high_pass_filter
+from clean_pipeline import hp_filter
 from roi_analyzer import get_average_image
 from scipy.signal import find_peaks
 
@@ -103,9 +103,6 @@ def detect_spikes(trace, movmean_window=40, min_distance=10):
         ax_trace.relim()
         ax_trace.autoscale_view()
 
-        # Update count bar
-        bar[0].set_height(len(peaks))
-        ax_count.set_ylim(0, max(len(peaks) + 5, 10))  # Auto scale y-axis
         ax_count.set_title(f"{len(peaks)} spikes detected")
 
         fig.canvas.draw_idle()
@@ -119,8 +116,8 @@ def detect_spikes(trace, movmean_window=40, min_distance=10):
 
 def extract_sta(movie, roi_traces):
     n_frames, n_row, n_col = movie.shape
-    n_rois = roi_traces.shape[0]
-    first_trace = roi_traces[0,:]
+    n_rois = roi_traces.shape[1]
+    first_trace = roi_traces[:, 0]
     spike_indices = detect_spikes(first_trace)
 
     window_size = 2 * PULSE_FRAMES + 1
@@ -131,7 +128,7 @@ def extract_sta(movie, roi_traces):
     for i, spike_time in enumerate(spike_indices):
         if PULSE_FRAMES < spike_time < (n_frames - PULSE_FRAMES):
             # ROI trace segment
-            fs = roi_traces[:, (spike_time - PULSE_FRAMES):(spike_time + PULSE_FRAMES + 1)].T
+            fs = roi_traces[(spike_time - PULSE_FRAMES):(spike_time + PULSE_FRAMES + 1), :]
             f0 = np.mean(fs[:10, :], axis=0)
             spikes[:, :, c] = fs - f0
 

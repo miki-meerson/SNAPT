@@ -7,7 +7,7 @@ from tifffile import tifffile
 from constants import *
 
 
-def high_pass_filter(signal, low_freq_to_filter):
+def hp_filter(signal, low_freq_to_filter):
     """ High pass filter a signal
         Firstly get the low-pass filtered signal (up to low_freq_to_filter)
         Then subtract from the original signal
@@ -23,12 +23,7 @@ def high_pass_filter(signal, low_freq_to_filter):
 
 def _compute_intensity(movie):
     """ Compute mean intensity of each frame throughout the movie """
-
-    frames = movie.shape[0]
-    intensity = np.mean(movie, axis=(1, 2))  # mean across height and width
-    assert frames == len(intensity), "Intensity array does not match number of frames"
-
-    return intensity
+    return np.mean(movie, axis=(1, 2))  # mean across height and width
 
 
 def _detect_intensity_drops(intensity, window_length=11, polyorder=3, bad_frames_threshold=-3.5):
@@ -111,12 +106,6 @@ def clean_intensity_drops(movie, initial_threshold=-3.5):
     return final_cleaned_movie
 
 
-def _compute_psd(signal):
-    """ Compute PSD of signal """
-    signal_fft = np.fft.fft(signal)
-    signal_psd = np.abs(signal_fft) ** 2
-    return signal_psd
-
 def _regress_out_poly2(movie, intensity=None):
     """ Regresses out global intensity and low-order polynomial trends from each pixel's time trace
         by fitting each pixel's fluorescence trace to a set of regressors
@@ -171,20 +160,20 @@ def _choose_low_freq_to_filter(movie, initial_cutoff=3.0):
     ax_time = axs[1]
 
     # Initial filtered signal and PSD
-    intensity_high_pass = high_pass_filter(intensity, low_freq_to_filter=initial_cutoff)
-    intensity_psd = _compute_psd(intensity)
-    noise_psd = _compute_psd(intensity_high_pass)
+    intensity_hp = hp_filter(intensity, low_freq_to_filter=initial_cutoff)
+    intensity_psd = np.abs(np.fft.fft(intensity)) ** 2
+    intensity_hp_psd = np.abs(np.fft.fft(intensity_hp)) ** 2
 
     # Plot PSD
     l1, = ax_psd.semilogy(freq_half, intensity_psd[:len(freq)//2], label="Raw")
-    l2, = ax_psd.semilogy(freq_half, noise_psd[:len(freq)//2], label=f"Filtered @ {initial_cutoff}Hz")
+    l2, = ax_psd.semilogy(freq_half, intensity_hp_psd[:len(freq)//2], label=f"Filtered @ {initial_cutoff}Hz")
     ax_psd.set_title('Intensity Power Spectrum')
     ax_psd.set_xlabel("Frequency (Hz)")
     ax_psd.set_ylabel("Power")
     ax_psd.legend()
 
     # Plot intensity traces
-    l3, = ax_time.plot(t, intensity_high_pass, 'b-', label=f'High Pass Intensity')
+    l3, = ax_time.plot(t, intensity_hp, 'b-', label=f'High Pass Intensity')
     ax_time.set_title('Mean Intensity over time')
     ax_time.set_xlabel('Frame')
     ax_time.set_ylabel('Mean Intensity')
@@ -196,8 +185,8 @@ def _choose_low_freq_to_filter(movie, initial_cutoff=3.0):
 
     def update(val):
         low_freq = slider.val
-        filtered = high_pass_filter(intensity, low_freq_to_filter=low_freq)
-        new_psd = _compute_psd(filtered)
+        filtered = hp_filter(intensity, low_freq_to_filter=low_freq)
+        new_psd = np.abs(np.fft.fft(filtered)) ** 2
 
         l2.set_ydata(new_psd[:len(freq)//2])
         l2.set_label(f"Filtered @ {low_freq:.1f}Hz")
@@ -230,29 +219,29 @@ def clean_power_spectrum_noise(movie):
 
     low_freq_cutoff = _choose_low_freq_to_filter(movie)
     intensity = _compute_intensity(movie)
-    intensity_high_pass = high_pass_filter(intensity, low_freq_to_filter=low_freq_cutoff)
+    intensity_hp = hp_filter(intensity, low_freq_to_filter=low_freq_cutoff)
 
     # Remove the first few frames where the filter doesn't work
     drop_frames = 10
-    movie_clean = movie[drop_frames:]
-    intensity_high_pass = intensity_high_pass[drop_frames:]
+    movie = movie[drop_frames:]
+    intensity_hp = intensity_hp[drop_frames:]
 
     # Regress out intensity, linear drift, and quadratic drift from each pixel's time trace
-    movie_clean = _regress_out_poly2(movie_clean, intensity=intensity_high_pass)
+    movie_clean = _regress_out_poly2(movie, intensity=intensity_hp)
 
     return movie_clean
 
 
-def clean_movie_pipeline(movie_original, save_clean=False):
+def clean_movie_pipeline(movie_original, save_clean=True):
     """ Pipeline of all cleaning functions - return the clean movie """
 
     print("Cleaning the data...")
     movie_clean = clean_power_spectrum_noise(clean_intensity_drops(movie_original))
 
-    intensity_raw = _compute_intensity(movie_original)
-    intensity_clean = _compute_intensity(movie_clean)
-
     if PLOT_CLEANING_STEPS:
+        intensity_raw = _compute_intensity(movie_original)
+        intensity_clean = _compute_intensity(movie_clean)
+
         plt.figure(figsize=(12, 4))
         plt.plot(intensity_raw, label="Raw")
         plt.plot(intensity_clean, label="Drift Removed")
